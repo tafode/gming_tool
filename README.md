@@ -1,116 +1,110 @@
 # GMing Tool
 
-A cross-platform TTRPG Game Master's session tool, written in Rust with
-[eframe/egui](https://github.com/emilk/egui). Runs natively on Linux and Windows.
+A small Game Master's desk for tabletop sessions: a chapter-by-chapter story
+editor with a music library that plays YouTube tracks in place.
 
-## Status
+It is a local web app. `./start.sh` builds it, serves it on
+`http://127.0.0.1:4173/`, and opens your browser. There is no backend, no
+account, no telemetry, and no server to remember to start beyond that script.
 
-Milestone 4: story chapters, a music library, and real playback.
+## Music, and staying ad-free
 
-- **Chapters** — add chapters from the left sidebar and write each chapter's
-  story text in a large editor; switching chapters swaps the text.
-- **Music** — add YouTube URLs in the right panel, click a track to play it,
-  and use the transport buttons and volume slider. Titles and audio are fetched
-  with [yt-dlp](https://github.com/yt-dlp/yt-dlp) and played with
-  [rodio](https://github.com/RustAudio/rodio). Tracks can be deleted.
+Tracks play through **YouTube's own embedded player** (the official IFrame Player
+API). Nothing is downloaded, extracted, or re-streamed: the app hands a video id
+to YouTube and YouTube plays it. That is the same mechanism any website uses to
+embed a video, so it stays within YouTube's terms.
 
-Work is autosaved to disk a second after the last change (and on exit), so
-nothing is lost when the app closes. See *Where your data lives* below.
+Ad-free playback comes from **your own** YouTube Premium session, which reaches
+the embedded player by third-party cookie. That works in **Chrome or Edge**, as
+long as you are signed in to YouTube there. Browsers that partition third-party
+cookies — Firefox with Total Cookie Protection, Safari — hide your account from
+the embedded player, so ads will appear even with Premium. **Open the app in
+Chrome or Edge to keep it ad-free.**
 
-The first time a track is added or played, the app downloads the official
-standalone `yt-dlp` build (about 30 MB) into its own data directory. If you
-already have `yt-dlp` on your `PATH`, that copy is used instead and nothing is
-downloaded. `ffmpeg` is **not** required.
-
-> **A note on YouTube** — downloading audio may violate YouTube's Terms of
-> Service. Keep this to your own content or content you are permitted to use.
+> Earlier versions of this tool resolved and streamed the audio directly with
+> `yt-dlp`, which is against YouTube's Terms of Service. That approach is gone.
 
 ## Requirements
 
-- Rust 1.95+ (pinned via `rust-toolchain.toml`; install with [rustup](https://rustup.rs))
+- **Node.js 20 or newer** — used to build and serve the app.
+- **A browser.** Chrome or Edge recommended (see above).
 
-### Linux
+Nothing else: no `yt-dlp`, no media libraries, no system codecs.
 
-On Debian/Ubuntu-based distros (including Zorin OS), the window, graphics and
-audio build dependencies:
+## Running it
 
-```sh
-sudo apt install libxkbcommon-dev libwayland-dev libx11-dev libgl1-mesa-dev libasound2-dev
-```
-
-On Fedora/RHEL-based distros, the audio library is in `alsa-lib-devel`.
-
-### Windows
-
-Install the Rust toolchain plus the **MSVC build tools** (Visual Studio Build
-Tools with the "Desktop development with C++" workload).
-
-## Build and run
-
-```sh
-cargo run            # debug build + run
-cargo build --release   # portable binary in target/release/
-```
-
-On Windows the binary is `target\release\gming_tool.exe`.
-
-## Where your data lives
-
-The app keeps a small JSON save file in the per-user data directory for your
-platform:
-
-| Platform | Location |
+| Command | What it does |
 | --- | --- |
-| Linux | `~/.local/share/gming_tool/save.json` |
-| Windows | `%APPDATA%\gming_tool\data\save.json` |
+| `./start.sh` | Build, serve on `http://127.0.0.1:4173/`, open the browser. |
+| `PORT=8080 ./start.sh` | Same, on a different port. |
+| `start.cmd` | Same as `start.sh`, for Windows. |
+| `./dev.sh` | Vite dev server with hot reload on port 5173. |
 
-Cached audio lives in the corresponding cache directory
-(`~/.cache/gming_tool/audio` on Linux), one file per video id. The save file is
-plain UTF-8 JSON with a `schema_version` field and **no absolute OS-specific
-paths**, so it can be copied between Linux and Windows. Audio and the downloaded
-`yt-dlp` binary are per-machine and are re-fetched when needed:
+`start.sh` works on Linux and macOS, and on Windows from Git Bash (it will not
+auto-open the browser there — just visit the printed URL).
 
-| Platform | `yt-dlp` binary |
-| --- | --- |
-| Linux | `~/.local/share/gming_tool/bin/yt-dlp` |
-| Windows | `%APPDATA%\gming_tool\data\bin\yt-dlp.exe` |
+## Your work is saved
+
+- Everything lives in the browser's local storage and is written about a second
+  after you stop typing. The status bar tells you when it is saved.
+- Browser storage does not travel between machines, so use **Export** and
+  **Import** in the header to carry a session between, say, Linux and Windows as
+  a `.json` file.
+- That file is byte-compatible with the format the earlier Rust build wrote to
+  `~/.local/share/gming_tool/save.json` (or
+  `%APPDATA%\gming_tool\data\save.json`), so existing saves import unchanged. It
+  carries a `schema_version` so the format can keep evolving.
+- If stored data is ever unreadable, a copy is kept aside and a fresh story is
+  started rather than destroying anything.
+
+## What it does
+
+**Story** — add chapters, switch between them, and write each chapter's text.
+Chapters are auto-named `Chapter 1`, `Chapter 2`, … and never renumber.
+
+**Music** — paste a YouTube link (watch, `youtu.be`, `embed`, `shorts` or `live`
+URLs, or a bare video id), click a track to play it, and use play/pause, stop and
+the volume slider. Tracks can be removed. Titles are fetched from YouTube's
+public oEmbed endpoint, falling back to whatever the player reports.
+
+Deliberately out of scope for now: renaming/deleting/reordering chapters, and
+reordering tracks.
 
 ## Tests
 
 ```sh
-cargo test     # model, persistence, audio and headless UI tests
+npm test          # one pass
+npm run test:watch
 ```
 
-The UI tests drive the real widgets through
-[`egui_kittest`](https://crates.io/crates/egui_kittest) with fake audio and
-resolver backends, so they need no display, no sound device and no network. The
-real audio backend is exercised only when a sound device exists, and the tests
-skip gracefully when it does not.
+The suite covers the data model, the save format and autosave behaviour, YouTube
+URL parsing / title lookup, and the UI (rendered with jsdom). The real YouTube
+player is never started in tests, so nothing touches the network.
 
-One end-to-end test is ignored by default because it downloads `yt-dlp` and a
-video from YouTube:
-
-```sh
-cargo test -- --ignored real_yt_dlp
-```
-
-## Project layout
+## Layout
 
 ```
-src/
-├── main.rs          entry point: window setup + app startup
-├── app.rs           UI shell (eframe::App), layout and interaction
-├── model/
-│   ├── mod.rs       story data: Story, Chapter, ChapterId, MusicLibrary, Track
-│   └── store.rs     save/load: SaveData, AppDirs, atomic JSON writes
-└── music/
-    ├── mod.rs       YouTube URL helpers
-    ├── output.rs    AudioOutput trait: rodio backend + silent fallback
-    ├── resolver.rs  Resolver trait + yt-dlp backend
-    └── yt_dlp.rs    finding/installing and driving the yt-dlp tool
+start.sh, start.cmd, dev.sh    launchers
+index.html                     page shell
+src/main.tsx                   entry point
+src/App.tsx                    layout, state, wiring
+src/model/types.ts             chapters, tracks, save schema
+src/model/store.ts             local storage, autosave, import/export
+src/music/youtube.ts           link parsing, placeholders, oEmbed titles
+src/player/youtubeApi.ts       IFrame API loader and error messages
+src/player/useYouTubePlayer.ts the player itself
+src/components/                ChapterSidebar, ChapterEditor, MusicPanel, StatusBar
+tests/                         vitest suites
 ```
 
-The UI talks to the `AudioOutput` and `Resolver` traits rather than to concrete
-implementations. That keeps the panel testable with fake backends, and lets the
-app fall back to a silent backend when no audio device is available.
+## Network use
 
+The app serves its own files from `127.0.0.1`. The only other requests it ever
+makes are to `youtube.com` — the player script, and oEmbed lookups for titles —
+and only once your music library is non-empty. (The player script is fetched as
+soon as you add a track, so the first click can start playing straight away
+rather than downloading a script first.)
+
+## License
+
+MIT.
