@@ -13,3 +13,6 @@ eframe = "0.36"
 opt-level = 3
 lto = "thin"
 strip = true
+
+[dev-dependencies]
+egui_kittest = "0.36"

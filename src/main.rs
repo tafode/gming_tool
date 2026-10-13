@@ -1,4 +1,5 @@
 mod app;
+mod model;
 
 use app::GmingToolApp;
 use eframe::egui;
@@ -15,6 +16,6 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "GMing Tool",
         native_options,
-        Box::new(|_cc| Ok(Box::new(GmingToolApp))),
+        Box::new(|_cc| Ok(Box::new(GmingToolApp::new()))),
     )
 }

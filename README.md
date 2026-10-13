@@ -5,7 +5,10 @@ A cross-platform TTRPG Game Master's session tool, written in Rust with
 
 ## Status
 
-Milestone 1: opens an empty window. No features yet.
+Milestone 2: story chapters. Add chapters from the left sidebar and write each
+chapter's story text in a large editor; switching chapters swaps the text.
+
+Data is **in-memory only** — it is not saved yet and is lost when the app closes.
 
 ## Requirements
 
@@ -39,7 +42,8 @@ On Windows the binary is `target\release\gming_tool.exe`.
 ```
 src/
 ├── main.rs   entry point: window setup + app startup
-└── app.rs    root application state (eframe::App implementation)
+├── app.rs    UI shell (eframe::App) and layout
+└── model.rs  story data: Story, Chapter, ChapterId
 ```
 
 Planned growth: `ui/`, `model/`, `persistence/` modules. Save files will be
