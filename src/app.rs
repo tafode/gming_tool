@@ -9,7 +9,7 @@ use eframe::egui;
 use crate::model::store::{self, CURRENT_SCHEMA_VERSION, SaveData};
 use crate::model::{ChapterId, MusicLibrary, Story, TrackId};
 use crate::music::output::AudioOutput;
-use crate::music::resolver::{Resolver, TrackMetadata};
+use crate::music::resolver::{ResolveError, Resolver, TrackMetadata};
 use crate::music::{placeholder_title, video_id_from_url};
 
 /// How long the app waits after a change before writing the save file.
@@ -450,15 +450,25 @@ impl GmingToolApp {
                     self.start_playback(track_id, &path);
                     return;
                 }
+                // Already being downloaded and prepared; a second click must not
+                // start a competing download of the same file.
+                if self.loading == Some(track_id) {
+                    return;
+                }
                 let Some(url) = self.music.url_of(track_id).map(str::to_owned) else {
                     return;
                 };
-                let video_id = self
+                // Without a video id we have no sane name for the cached file,
+                // so refuse rather than downloading to a nonsense path.
+                let Some(video_id) = self
                     .video_ids
                     .get(&track_id)
                     .cloned()
                     .or_else(|| video_id_from_url(&url))
-                    .unwrap_or_else(|| url.clone());
+                else {
+                    self.status = Status::Error(ResolveError::NotYouTube.to_string());
+                    return;
+                };
                 self.loading = Some(track_id);
                 self.status = Status::Info("Preparing audio…".to_owned());
                 self.spawn_audio(track_id, url, video_id, ctx);
@@ -595,9 +605,37 @@ impl eframe::App for GmingToolApp {
 mod tests {
     use super::*;
     use crate::music::output::SilentAudioOutput;
-    use crate::music::resolver::PlaceholderResolver;
+    use crate::music::resolver::ResolveError;
     use egui::accesskit::Role;
     use egui_kittest::{Harness, kittest::Queryable};
+
+    /// A resolver that needs no network: the title is the video id and the
+    /// "downloaded" audio lives under a temporary cache directory.
+    struct TestResolver {
+        cache_dir: PathBuf,
+    }
+
+    impl TestResolver {
+        fn new(cache_dir: impl Into<PathBuf>) -> Self {
+            Self {
+                cache_dir: cache_dir.into(),
+            }
+        }
+    }
+
+    impl Resolver for TestResolver {
+        fn metadata(&self, url: &str) -> Result<TrackMetadata, ResolveError> {
+            let video_id = crate::music::video_id_from_url(url).ok_or(ResolveError::NotYouTube)?;
+            Ok(TrackMetadata {
+                title: video_id.clone(),
+                video_id,
+            })
+        }
+
+        fn audio_file(&self, _url: &str, video_id: &str) -> Result<PathBuf, ResolveError> {
+            Ok(self.cache_dir.join(format!("{video_id}.m4a")))
+        }
+    }
 
     impl GmingToolApp {
         fn chapter_count(&self) -> usize {
@@ -646,12 +684,12 @@ mod tests {
         dir
     }
 
-    /// Build an app backed by the placeholder resolver and silent audio, using
-    /// a fresh temporary directory so tests never touch real user data.
+    /// Build an app backed by a fake resolver and silent audio, using a fresh
+    /// temporary directory so tests never touch real user data.
     fn build_app(tag: &str) -> (GmingToolApp, SilentAudioOutput, PathBuf) {
         let dir = temp_dir(tag);
         let audio = SilentAudioOutput::default();
-        let resolver = Arc::new(PlaceholderResolver::new(dir.join("audio")));
+        let resolver = Arc::new(TestResolver::new(dir.join("audio")));
         let app = GmingToolApp::new(dir.join("save.json"), resolver, Box::new(audio.clone()));
         (app, audio, dir)
     }
@@ -810,7 +848,7 @@ mod tests {
     }
 
     #[test]
-    fn an_invalid_url_reports_an_error_and_looks_no_new_track() {
+    fn an_invalid_url_reports_an_error_and_adds_no_playable_track() {
         let (app, _audio, _dir) = build_app("bad_url");
         let mut harness = harness(app);
 
@@ -819,6 +857,25 @@ mod tests {
         // The row is added optimistically, but the resolver rejects it.
         assert!(harness.state().status.is_error());
         assert_eq!(harness.state().track_count(), 1);
+    }
+
+    #[test]
+    fn playing_a_track_with_an_unrecognised_url_is_refused() {
+        let (app, audio, _dir) = build_app("play_bad_url");
+        let mut harness = harness(app);
+        add_track_through_ui(&mut harness, "definitely not a link");
+
+        harness
+            .get_by_role_and_label(Role::Button, "definitely not a link")
+            .click();
+        harness.run();
+        settle(&mut harness);
+
+        // Without a video id there is no usable name for the cached file, so
+        // nothing may be downloaded or played.
+        assert_eq!(harness.state().playing_track(), None);
+        assert!(audio.played_files().is_empty());
+        assert!(harness.state().status.is_error());
     }
 
     // -- persistence -------------------------------------------------------
@@ -835,7 +892,7 @@ mod tests {
         app.save_now();
 
         let audio = SilentAudioOutput::default();
-        let resolver = Arc::new(PlaceholderResolver::new(dir.join("audio")));
+        let resolver = Arc::new(TestResolver::new(dir.join("audio")));
         let reloaded = GmingToolApp::new(save_path, resolver, Box::new(audio));
 
         assert_eq!(reloaded.music.tracks().len(), 1);
@@ -850,7 +907,7 @@ mod tests {
         std::fs::write(&save_path, "{ not json at all").expect("write");
 
         let audio = SilentAudioOutput::default();
-        let resolver = Arc::new(PlaceholderResolver::new(dir.join("audio")));
+        let resolver = Arc::new(TestResolver::new(dir.join("audio")));
         let app = GmingToolApp::new(save_path.clone(), resolver, Box::new(audio));
 
         assert!(app.status.is_error());

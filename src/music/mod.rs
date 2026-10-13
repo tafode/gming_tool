@@ -6,6 +6,7 @@
 
 pub mod output;
 pub mod resolver;
+pub mod yt_dlp;
 
 /// Best-effort extraction of the video id from a YouTube URL.
 ///

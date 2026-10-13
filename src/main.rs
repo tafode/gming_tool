@@ -7,8 +7,8 @@ use std::sync::Arc;
 use app::GmingToolApp;
 use eframe::egui;
 use model::store::AppDirs;
-use music::output::SilentAudioOutput;
-use music::resolver::PlaceholderResolver;
+use music::output::{AudioOutput, RodioOutput, SilentAudioOutput};
+use music::resolver::YtDlpResolver;
 
 fn main() -> eframe::Result<()> {
     let dirs = match AppDirs::resolve() {
@@ -19,10 +19,18 @@ fn main() -> eframe::Result<()> {
         }
     };
 
-    // Real audio (rodio) and real yt-dlp resolution arrive in the next step;
-    // for now the UI runs against no-op backends so it can be explored.
-    let resolver = Arc::new(PlaceholderResolver::new(dirs.audio_cache_dir()));
-    let audio = Box::new(SilentAudioOutput::default());
+    let resolver = Arc::new(YtDlpResolver::new(dirs.audio_cache_dir(), dirs.tools_dir()));
+
+    // Fall back to a silent device if there is no sound card (or it is busy):
+    // the rest of the tool stays usable.
+    let audio: Box<dyn AudioOutput> = match RodioOutput::new() {
+        Ok(output) => Box::new(output),
+        Err(err) => {
+            eprintln!("gming_tool: audio disabled ({err})");
+            Box::new(SilentAudioOutput::default())
+        }
+    };
+
     let app = GmingToolApp::new(dirs.save_file(), resolver, audio);
 
     let native_options = eframe::NativeOptions {

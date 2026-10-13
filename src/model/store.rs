@@ -87,6 +87,16 @@ impl AppDirs {
     pub fn audio_cache_dir(&self) -> PathBuf {
         self.cache_dir.join("audio")
     }
+
+    /// Where helper binaries the app downloads for itself (currently yt-dlp)
+    /// live.
+    ///
+    /// This is under the data directory rather than the cache directory: the
+    /// tool is small but awkward to re-fetch, and caches may be cleared by the
+    /// system at any time.
+    pub fn tools_dir(&self) -> PathBuf {
+        self.data_dir.join("bin")
+    }
 }
 
 /// Write `data` to `path` atomically (write to a temp file, then rename).
