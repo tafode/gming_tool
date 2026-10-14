@@ -213,7 +213,8 @@ button:focus-visible {
 }
 
 .player-host,
-.player-host iframe {
+.player-slot,
+.player-slot iframe {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -221,9 +222,15 @@ button:focus-visible {
   border: 0;
 }
 
+/* The two layers a crossfade moves between; each holds one YouTube iframe. */
+.player-slot {
+  will-change: opacity;
+}
+
 .player-idle {
   position: absolute;
   inset: 0;
+  z-index: 3;
   display: grid;
   place-items: center;
   padding: 0 16px;

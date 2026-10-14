@@ -29,6 +29,8 @@ export interface YTPlayer {
   pauseVideo(): void;
   stopVideo(): void;
   setVolume(volume: number): void;
+  mute(): void;
+  unMute(): void;
   getVideoData(): VideoData;
   destroy(): void;
 }

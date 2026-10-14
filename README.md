@@ -72,6 +72,11 @@ URLs, or a bare video id), click a track to play it, and use play/pause, stop an
 the volume slider. Tracks can be removed. Titles are fetched from YouTube's
 public oEmbed endpoint, falling back to whatever the player reports.
 
+Switching tracks **crossfades**. A second player starts the new video silently —
+waiting until it is actually playing so there is no gap — and the two are then
+blended, sound and picture together, over about a second and a half. Play, pause
+and stop act on the current track as before; only a change of track blends.
+
 **Reference** — a drawer under the story holds your PDFs and searches across all
 of them at once (see below).
 
@@ -119,7 +124,8 @@ npm run test:watch
 ```
 
 The suite covers the data model, the save format and autosave behaviour, YouTube
-URL parsing / title lookup, and the UI (rendered with jsdom).
+URL parsing / title lookup, the crossfade volume and opacity ramp, and the UI
+(rendered with jsdom).
 
 For the reference drawer it covers phrase search and snippet cutting, the
 extracted-text cache and its invalidation when a file changes, the folder server
@@ -140,7 +146,8 @@ src/model/types.ts             chapters, tracks, save schema
 src/model/store.ts             local storage, autosave, import/export
 src/music/youtube.ts           link parsing, placeholders, oEmbed titles
 src/player/youtubeApi.ts       IFrame API loader and error messages
-src/player/useYouTubePlayer.ts the player itself
+src/player/fade.ts             the crossfade curve (pure, tested)
+src/player/useYouTubePlayer.ts the players, and the crossfade between them
 src/pdf/library.ts             the shelf: what the server found in the folder
 src/pdf/extract.ts             reading a text layer out with pdf.js
 src/pdf/search.ts              matching a phrase, cutting a snippet
