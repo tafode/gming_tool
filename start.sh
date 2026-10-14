@@ -9,6 +9,16 @@ cd "$(dirname "$0")"
 PORT="${PORT:-4173}"
 URL="http://127.0.0.1:${PORT}/"
 
+# Reference PDFs: a folder of rulebooks and adventures to look things up in.
+# Point it elsewhere with: PDF_DIR=/somewhere/else ./start.sh
+PDF_DIR="${PDF_DIR:-$PWD/pdfs}"
+case "$PDF_DIR" in
+  "~") PDF_DIR="$HOME" ;;
+  "~/"*) PDF_DIR="$HOME/${PDF_DIR#\~/}" ;;
+esac
+export PDF_DIR
+mkdir -p "$PDF_DIR"
+
 command -v npm >/dev/null 2>&1 || {
   echo "error: npm was not found — install Node.js 20 or newer first" >&2
   exit 1
@@ -22,6 +32,7 @@ fi
 echo "Building…"
 npm run build
 
+echo "Reference PDFs: ${PDF_DIR}"
 echo "Serving ${URL} — press Ctrl-C to stop."
 npm run preview -- --host 127.0.0.1 --port "$PORT" &
 server_pid=$!

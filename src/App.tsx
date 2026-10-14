@@ -1,7 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 import { ChapterEditor } from './components/ChapterEditor';
 import { ChapterSidebar } from './components/ChapterSidebar';
 import { MusicPanel, type Playback } from './components/MusicPanel';
+import { ReferencePanel } from './components/ReferencePanel';
 import { StatusBar } from './components/StatusBar';
 import { createAutosaver, downloadDocument, loadDocument, saveDocument } from './model/store';
 import {
@@ -22,6 +31,11 @@ import {
 } from './music/youtube';
 import { useYouTubePlayer } from './player/useYouTubePlayer';
 import { loadYouTubeApi, PlayerState } from './player/youtubeApi';
+import {
+  clampReferenceHeight,
+  loadReferenceLayout,
+  saveReferenceLayout,
+} from './pdf/preferences';
 
 export default function App() {
   const [initial] = useState(loadDocument);
@@ -34,6 +48,10 @@ export default function App() {
   const [activeTrackId, setActiveTrackId] = useState<number | null>(null);
   const [playback, setPlayback] = useState<Playback>('idle');
   const [saveState, setSaveState] = useState<'saved' | 'unsaved'>('saved');
+
+  // How the reference drawer was left. Kept out of the story document, so
+  // exports stay small and the save schema is untouched.
+  const [reference, setReference] = useState(loadReferenceLayout);
 
   // The newest document, for callbacks that must not be rebuilt on every edit.
   const dataRef = useRef(data);
@@ -70,6 +88,34 @@ export default function App() {
       autosaver.flush();
     };
   }, [autosaver]);
+
+  // --- reference drawer ----------------------------------------------------
+
+  useEffect(() => {
+    saveReferenceLayout(reference);
+  }, [reference]);
+
+  const startReferenceResize = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const handle = event.currentTarget;
+    handle.setPointerCapture(event.pointerId);
+
+    const move = (moveEvent: PointerEvent) => {
+      setReference({
+        open: true,
+        height: clampReferenceHeight(window.innerHeight - moveEvent.clientY),
+      });
+    };
+    const finish = () => {
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', finish);
+      handle.removeEventListener('pointercancel', finish);
+    };
+
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', finish);
+    handle.addEventListener('pointercancel', finish);
+  }, []);
 
   // --- music ---------------------------------------------------------------
 
@@ -308,6 +354,15 @@ export default function App() {
           onDelete={handleDeleteTrack}
         />
       </div>
+
+      <ReferencePanel
+        collapsed={!reference.open}
+        height={reference.height}
+        onToggleCollapsed={() =>
+          setReference((current) => ({ ...current, open: !current.open }))
+        }
+        onResizeStart={startReferenceResize}
+      />
 
       <StatusBar
         saveState={saveState}

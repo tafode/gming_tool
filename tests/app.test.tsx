@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../src/App';
 import { SAVE_KEY } from '../src/model/store';
+import type { PdfDocumentInfo } from '../src/pdf/library';
 
 // The real player is never built in tests: YouTube's API script is never
 // fetched, so `loadYouTubeApi` simply never settles.
@@ -13,6 +14,33 @@ vi.mock('../src/player/youtubeApi', () => ({
 
 const VIDEO_URL = 'https://youtu.be/dQw4w9WgXcQ';
 const VIDEO_ID = 'dQw4w9WgXcQ';
+
+/**
+ * Stub the two things the app reaches out for.
+ *
+ * The reference listing only resolves when a test asks for it: a shelf that
+ * never arrives keeps the drawer quiet in tests that are not about the drawer,
+ * so no state settles after a test has finished.
+ */
+function stubFetch(documents?: PdfDocumentInfo[]): void {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((input: RequestInfo | URL) => {
+      if (String(input) === '/pdfs/index.json') {
+        if (documents === undefined) {
+          return new Promise(() => {});
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ folder: '/home/marco/gming_tool/pdfs', documents }),
+        });
+      }
+      // oEmbed title lookups are not part of these tests.
+      return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({}) });
+    }),
+  );
+}
 
 function addLink(url: string): void {
   fireEvent.change(screen.getByLabelText('YouTube link'), { target: { value: url } });
@@ -26,11 +54,7 @@ function trackButton(): HTMLElement {
 describe('the GMing tool', () => {
   beforeEach(() => {
     localStorage.clear();
-    // oEmbed lookups are not part of these tests.
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => Promise.resolve({ ok: false, json: () => Promise.resolve({}) })),
-    );
+    stubFetch();
   });
 
   afterEach(() => {
@@ -138,5 +162,22 @@ describe('the GMing tool', () => {
       'The inn at dusk',
     );
     expect(screen.getByRole('button', { name: VIDEO_ID })).toBeTruthy();
+  });
+
+  it('keeps a reference drawer under the story, folded away by default', async () => {
+    stubFetch([]);
+    render(<App />);
+
+    expect(screen.getByRole('button', { name: '▸ Reference' })).toBeTruthy();
+    expect(screen.queryByLabelText('Search reference documents')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: '▸ Reference' }));
+
+    expect(screen.getByLabelText('Search reference documents')).toBeTruthy();
+    expect(await screen.findByText(/No PDFs in/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: '▾ Reference' }));
+
+    expect(screen.queryByLabelText('Search reference documents')).toBeNull();
   });
 });

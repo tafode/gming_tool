@@ -6,6 +6,10 @@ cd /d "%~dp0"
 set "PORT=4173"
 set "URL=http://127.0.0.1:%PORT%/"
 
+rem Reference PDFs: a folder of rulebooks and adventures to look things up in.
+if "%PDF_DIR%"=="" set "PDF_DIR=%~dp0pdfs"
+if not exist "%PDF_DIR%" mkdir "%PDF_DIR%"
+
 where npm >nul 2>nul
 if errorlevel 1 (
   echo error: npm was not found - install Node.js 20 or newer first
@@ -20,6 +24,7 @@ if not exist node_modules (
 echo Building...
 call npm run build || exit /b 1
 
+echo Reference PDFs: %PDF_DIR%
 echo Serving %URL% - press Ctrl-C to stop.
 start "" "%URL%"
 call npm run preview -- --host 127.0.0.1 --port %PORT%

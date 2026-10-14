@@ -1,5 +1,9 @@
 node_modules
 dist
+pdfs
+target
+# Books belong in `pdfs/`, never in the source tree.
+*.pdf
 *.local
 *.swp
 *~

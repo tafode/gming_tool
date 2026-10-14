@@ -1,7 +1,8 @@
 # GMing Tool
 
 A small Game Master's desk for tabletop sessions: a chapter-by-chapter story
-editor with a music library that plays YouTube tracks in place.
+editor, a music library that plays YouTube tracks in place, and a drawer of
+reference PDFs to look things up in.
 
 It is a local web app. `./start.sh` builds it, serves it on
 `http://127.0.0.1:4173/`, and opens your browser. There is no backend, no
@@ -37,6 +38,7 @@ Nothing else: no `yt-dlp`, no media libraries, no system codecs.
 | --- | --- |
 | `./start.sh` | Build, serve on `http://127.0.0.1:4173/`, open the browser. |
 | `PORT=8080 ./start.sh` | Same, on a different port. |
+| `PDF_DIR=~/rpg-books ./start.sh` | Same, reading reference PDFs from another folder. |
 | `start.cmd` | Same as `start.sh`, for Windows. |
 | `./dev.sh` | Vite dev server with hot reload on port 5173. |
 
@@ -56,6 +58,9 @@ auto-open the browser there — just visit the printed URL).
   carries a `schema_version` so the format can keep evolving.
 - If stored data is ever unreadable, a copy is kept aside and a fresh story is
   started rather than destroying anything.
+- The reference drawer remembers its height, whether it is open, and which page
+  of each document you were reading. Those are browser-local settings, kept out
+  of the exported `.json` so that file stays just your story.
 
 ## What it does
 
@@ -67,8 +72,44 @@ URLs, or a bare video id), click a track to play it, and use play/pause, stop an
 the volume slider. Tracks can be removed. Titles are fetched from YouTube's
 public oEmbed endpoint, falling back to whatever the player reports.
 
+**Reference** — a drawer under the story holds your PDFs and searches across all
+of them at once (see below).
+
 Deliberately out of scope for now: renaming/deleting/reordering chapters, and
 reordering tracks.
+
+## Reference PDFs
+
+The **Reference** drawer sits under the story. Put your books in `pdfs/` next to
+the project — the launcher creates the folder on first run — and they appear on
+the shelf:
+
+```
+pdfs/
+  rulebook.pdf
+  adventures/Lost Mine.pdf     folders are fine, and are searched too
+```
+
+- **Reading** — click a document and it opens in your browser's own PDF viewer,
+  so its built-in search, page box and zoom all work as usual.
+- **Searching** — the box at the top searches **every** document at once. The
+  text layer of each book is read once, the first time you search it (pdf.js, a
+  page at a time, with progress shown), then cached in the browser and reused.
+  Hits list the document and page with a snippet, the match highlighted;
+  clicking one jumps the viewer to that page. Results are capped, so a word that
+  appears on every page cannot flood the panel.
+- **⌘/Ctrl-F inside the viewer** searches only the document you are reading. The
+  drawer's box is for finding which book a rule is in.
+- **Scanned books** have no text layer, so search cannot see inside them. The
+  drawer names those documents instead of quietly finding nothing; they still
+  display normally.
+- **`PDF_DIR`** — to keep books elsewhere, `PDF_DIR=~/rpg-books ./start.sh`.
+
+The folder is served by the same local server as the app, on `127.0.0.1` only,
+with byte-range requests, so a 300 MB rulebook streams and seeks rather than
+being copied into the browser first. Nothing is uploaded anywhere: the server
+reads that one folder and hands out PDFs from inside it (paths that try to climb
+out are refused).
 
 ## Tests
 
@@ -78,8 +119,15 @@ npm run test:watch
 ```
 
 The suite covers the data model, the save format and autosave behaviour, YouTube
-URL parsing / title lookup, and the UI (rendered with jsdom). The real YouTube
-player is never started in tests, so nothing touches the network.
+URL parsing / title lookup, and the UI (rendered with jsdom).
+
+For the reference drawer it covers phrase search and snippet cutting, the
+extracted-text cache and its invalidation when a file changes, the folder server
+(its listing, byte ranges, etags, and its refusal to serve anything outside the
+folder), and real text extraction — against a small PDF the tests generate
+themselves, so no binary fixture is committed.
+
+The real YouTube player is never started in tests, so nothing touches the network.
 
 ## Layout
 
@@ -93,17 +141,28 @@ src/model/store.ts             local storage, autosave, import/export
 src/music/youtube.ts           link parsing, placeholders, oEmbed titles
 src/player/youtubeApi.ts       IFrame API loader and error messages
 src/player/useYouTubePlayer.ts the player itself
-src/components/                ChapterSidebar, ChapterEditor, MusicPanel, StatusBar
+src/pdf/library.ts             the shelf: what the server found in the folder
+src/pdf/extract.ts             reading a text layer out with pdf.js
+src/pdf/search.ts              matching a phrase, cutting a snippet
+src/pdf/searchLibrary.ts       cache-first search across the whole shelf
+src/pdf/index-cache.ts         the extracted-text cache (IndexedDB)
+src/components/                ChapterSidebar, ChapterEditor, MusicPanel,
+                               ReferencePanel, StatusBar
+tools/pdf-server.ts            serves the PDF folder from the launcher
+pdfs/                          your reference books (not version controlled)
 tests/                         vitest suites
 ```
 
 ## Network use
 
-The app serves its own files from `127.0.0.1`. The only other requests it ever
-makes are to `youtube.com` — the player script, and oEmbed lookups for titles —
-and only once your music library is non-empty. (The player script is fetched as
-soon as you add a track, so the first click can start playing straight away
-rather than downloading a script first.)
+The app serves its own files from `127.0.0.1`, and the same local server hands
+your reference PDFs to your own browser. The only other requests it ever makes
+are to `youtube.com` — the player script, and oEmbed lookups for titles — and
+only once your music library is non-empty. (The player script is fetched as soon
+as you add a track, so the first click can start playing straight away rather
+than downloading a script first.)
+
+Nothing about your story or your books is sent anywhere.
 
 ## License
 
