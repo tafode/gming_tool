@@ -65,6 +65,10 @@ auto-open the browser there — just visit the printed URL).
   started rather than destroying anything.
 - The app also remembers which page of each document you were reading. That is a
   browser-local setting, kept out of the exported `.json`.
+- It remembers where each track was left off, too — pause, stop or switch away
+  and the track is waiting at that moment when you come back. A track that played
+  to its end starts over. These positions are browser-local as well, so they stay
+  out of the exported `.json`.
 
 ## What it does
 
@@ -79,6 +83,11 @@ document at once.
 URLs, or a bare video id), click a track to play it, and use play/pause, stop and
 the volume slider. Tracks can be removed. Titles are fetched from YouTube's
 public oEmbed endpoint, falling back to whatever the player reports.
+
+A track is picked up where you left it. Pausing, stopping or choosing another
+track remembers the moment; the track list shows it as `resumes 4:05` until you
+come back to it. A video that ran to its end is forgotten instead, so it starts
+from the top next time.
 
 Switching tracks **crossfades**. A second player starts the new video silently —
 waiting until it is actually playing so there is no gap — and the two are then
@@ -133,8 +142,10 @@ npm run test:watch
 ```
 
 The suite covers the data model, the save format and autosave behaviour, YouTube
-URL parsing / title lookup, the crossfade volume and opacity ramp, and the UI
-(rendered with jsdom).
+URL parsing / title lookup, the crossfade volume and opacity ramp, the resume
+positions, and the UI (rendered with jsdom). The player hook is exercised against
+a stand-in for YouTube's player, so the API calls it makes and the events it
+reacts to are asserted directly.
 
 For the reference shelf it covers phrase search and snippet cutting, the
 extracted-text cache and its invalidation when a file changes, the folder server
@@ -158,7 +169,9 @@ src/model/store.ts             local storage, autosave, import/export
 src/music/youtube.ts           link parsing, placeholders, oEmbed titles
 src/player/youtubeApi.ts       IFrame API loader and error messages
 src/player/fade.ts             the crossfade curve (pure, tested)
-src/player/useYouTubePlayer.ts the players, and the crossfade between them
+src/player/resume.ts           where each track was left off
+src/player/useYouTubePlayer.ts the players, the crossfade between them, and
+                               sampling playback positions
 src/pdf/library.ts             the shelf: what the server found in the folder
 src/pdf/useDocuments.ts        the shelf, the search, and which page is open
 src/pdf/extract.ts             reading a text layer out with pdf.js

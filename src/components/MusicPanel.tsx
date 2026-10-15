@@ -16,6 +16,8 @@ interface MusicPanelProps {
   /** Returns `false` when the URL was refused, so the input keeps its text. */
   onAdd(url: string): boolean;
   onDelete(trackId: number): void;
+  /** Track id → the clock time it will resume from, for tracks that have one. */
+  resumeTimes: Record<number, string>;
 }
 
 export function MusicPanel({
@@ -30,6 +32,7 @@ export function MusicPanel({
   onStop,
   onAdd,
   onDelete,
+  resumeTimes,
 }: MusicPanelProps) {
   const [url, setUrl] = useState('');
 
@@ -88,19 +91,24 @@ export function MusicPanel({
         <ul className="track-list">
           {tracks.map((track) => {
             const active = track.id === activeTrackId;
+            const resumesAt = resumeTimes[track.id];
             return (
               <li key={track.id} className={active ? 'track active' : 'track'}>
                 <button
                   type="button"
                   className="track-button"
                   aria-current={active}
+                  aria-label={resumesAt ? `${track.title}, resumes at ${resumesAt}` : track.title}
                   title={track.url}
                   onClick={() => onToggle(track.id)}
                 >
                   <span className="track-glyph" aria-hidden="true">
                     {active && playback === 'playing' ? '❚❚' : '▶'}
                   </span>
-                  <span className="track-title">{track.title}</span>
+                  <span className="track-label">
+                    <span className="track-title">{track.title}</span>
+                    {resumesAt && <span className="track-resume">resumes {resumesAt}</span>}
+                  </span>
                 </button>
                 <button
                   type="button"

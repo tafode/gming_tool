@@ -9,20 +9,33 @@
 //! The players are created lazily, the first time a track is played. When
 //! nothing is playing yet, or the current track is paused, a change is a plain
 //! reload of the active slot — there is nothing to blend against.
+//!
+//! The hook is also where playback *positions* are sampled: it reports where
+//! the current video has got to whenever that is worth remembering (pause,
+//! stop, switching away, and a slow tick while it plays), and hands saved
+//! start positions back to the player when a video is loaded. See
+//! [`../player/resume`] for where those positions are kept.
 
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import {
   describePlayerError,
   loadYouTubeApi,
   PlayerState,
+  type LoadVideoRequest,
   type VideoData,
   type YTPlayer,
 } from './youtubeApi';
 import { CROSSFADE_MS, CROSSFADE_TIMEOUT_MS, opacityAt, volumeAt } from './fade';
 
+/** Positions this close to the end count as "finished", not resumable. */
+const NEAR_END_SECONDS = 3;
+
+/** How often the playing track's position is reported while it runs. */
+const POSITION_TICK_MS = 5000;
+
 export interface YouTubeControls {
   /** Load a video and start playing it, crossfading if something is already on. */
-  load(videoId: string): void;
+  load(videoId: string, startSeconds?: number): void;
   play(): void;
   pause(): void;
   stop(): void;
@@ -35,6 +48,11 @@ export interface UseYouTubePlayerOptions {
   onTitle(videoId: string, title: string): void;
   /** Fired for every player state change (see [`PlayerState`]). */
   onState(state: number): void;
+  /**
+   * Fired when a video's position should be remembered — or forgotten, when
+   * `seconds` is `null` (the video finished, so it should start over).
+   */
+  onPosition(videoId: string, seconds: number | null): void;
   /** Fired when the player cannot play what was asked of it. */
   onError(message: string): void;
 }
@@ -52,7 +70,7 @@ interface PlayerSlot {
   player: YTPlayer | null;
   ready: boolean;
   creating: boolean;
-  pendingVideo: string | null;
+  pendingVideo: { videoId: string; startSeconds?: number } | null;
   queue: Array<(player: YTPlayer) => void>;
   wantsToPlay: boolean;
   nudged: boolean;
@@ -165,6 +183,35 @@ export function useYouTubePlayer(options: UseYouTubePlayerOptions): UseYouTubePl
     }
   }
 
+  /**
+   * Tell the app where a slot's video has got to.
+   *
+   * A position within [`NEAR_END_SECONDS`] of the end is reported as "forget
+   * it": a video that was let finish should start from the top next time.
+   */
+  function reportPosition(slot: PlayerSlot): void {
+    const player = slot.player;
+    if (!player) {
+      return;
+    }
+    const info = readVideoData(player);
+    if (!info?.video_id) {
+      return;
+    }
+    try {
+      const seconds = player.getCurrentTime();
+      const duration = player.getDuration();
+      if (!Number.isFinite(seconds)) {
+        return;
+      }
+      const finished =
+        Number.isFinite(duration) && duration > 0 && seconds >= duration - NEAR_END_SECONDS;
+      optionsRef.current.onPosition(info.video_id, finished ? null : seconds);
+    } catch {
+      // Too early to know where it is; the next state change tries again.
+    }
+  }
+
   function cancelFadeTimers(): void {
     if (fadeFrameRef.current !== null) {
       cancelAnimationFrame(fadeFrameRef.current);
@@ -194,16 +241,15 @@ export function useYouTubePlayer(options: UseYouTubePlayerOptions): UseYouTubePl
           slot.creating = false;
           return;
         }
-        const initialVideo = slot.pendingVideo;
-        slot.pendingVideo = null;
 
         // YouTube replaces the element it is handed with an <iframe>, so it gets
         // a throw-away child of our wrapper and React stays clear of the subtree.
         const mount = document.createElement('div');
         wrapper.appendChild(mount);
 
+        // No video is handed to the constructor: a waiting one is loaded from
+        // `onReady`, so it can carry a saved start position with it.
         slot.player = new namespace.Player(mount, {
-          videoId: initialVideo ?? undefined,
           playerVars: {
             autoplay: 1,
             controls: 1,
@@ -241,12 +287,14 @@ export function useYouTubePlayer(options: UseYouTubePlayerOptions): UseYouTubePl
       });
   }
 
-  function loadInto(slot: PlayerSlot, videoId: string): void {
+  function loadInto(slot: PlayerSlot, videoId: string, startSeconds?: number): void {
+    const video: LoadVideoRequest =
+      startSeconds !== undefined && startSeconds > 0 ? { videoId, startSeconds } : videoId;
     if (slot.player && slot.ready) {
-      slot.player.loadVideoById(videoId);
+      slot.player.loadVideoById(video);
       return;
     }
-    slot.pendingVideo = videoId;
+    slot.pendingVideo = { videoId, startSeconds };
     ensurePlayer(slot);
   }
 
@@ -262,19 +310,17 @@ export function useYouTubePlayer(options: UseYouTubePlayerOptions): UseYouTubePl
       setSlotMuted(slot, false);
     }
 
-    if (!slot.wantsToPlay) {
+    const queuedVideo = slot.pendingVideo;
+    slot.pendingVideo = null;
+    if (queuedVideo) {
+      loadInto(slot, queuedVideo.videoId, queuedVideo.startSeconds);
+    } else if (!slot.wantsToPlay) {
       // A crossfade this slot was part of was abandoned before it appeared.
       try {
         player.stopVideo();
       } catch {
         // Nothing to stop yet.
       }
-    }
-
-    const queuedVideo = slot.pendingVideo;
-    slot.pendingVideo = null;
-    if (queuedVideo) {
-      player.loadVideoById(queuedVideo);
     }
 
     const queued = slot.queue;
@@ -315,6 +361,18 @@ export function useYouTubePlayer(options: UseYouTubePlayerOptions): UseYouTubePl
 
     if (incoming && crossfade?.phase === 'loading' && event.data === PlayerState.PLAYING) {
       beginFade(crossfade);
+    }
+
+    // Positions are worth remembering whatever the UI is showing: a pause may
+    // even come from YouTube's own controls, and a video that ran to its end
+    // must not resume at the final chord next time.
+    if (event.data === PlayerState.PAUSED) {
+      reportPosition(slot);
+    } else if (event.data === PlayerState.ENDED) {
+      const info = readVideoData(event.target);
+      if (info?.video_id) {
+        optionsRef.current.onPosition(info.video_id, null);
+      }
     }
 
     // Only the slot the UI reflects may drive it, and never while the incoming
@@ -445,7 +503,15 @@ export function useYouTubePlayer(options: UseYouTubePlayerOptions): UseYouTubePl
     }
   }
 
-  function startIncoming(fromIndex: number, toIndex: number, videoId: string): void {
+  function startIncoming(
+    fromIndex: number,
+    toIndex: number,
+    videoId: string,
+    startSeconds?: number,
+  ): void {
+    // The track being left behind is about to be stopped, which resets its
+    // clock — take its position while it still has one.
+    reportPosition(slotsRef.current[fromIndex]);
     ensureWrappers();
     const from = slotsRef.current[fromIndex];
     const to = slotsRef.current[toIndex];
@@ -481,10 +547,10 @@ export function useYouTubePlayer(options: UseYouTubePlayerOptions): UseYouTubePl
       }
     }, CROSSFADE_TIMEOUT_MS);
 
-    loadInto(to, videoId);
+    loadInto(to, videoId, startSeconds);
   }
 
-  function load(videoId: string): void {
+  function load(videoId: string, startSeconds?: number): void {
     const crossfade = crossfadeRef.current;
     if (crossfade) {
       if (crossfade.phase === 'animating') {
@@ -492,7 +558,7 @@ export function useYouTubePlayer(options: UseYouTubePlayerOptions): UseYouTubePl
       } else {
         // The incoming track has not started yet; just change what it is loading
         // and keep fading away from the track already playing.
-        startIncoming(crossfade.fromIndex, crossfade.toIndex, videoId);
+        startIncoming(crossfade.fromIndex, crossfade.toIndex, videoId, startSeconds);
         return;
       }
     }
@@ -501,11 +567,15 @@ export function useYouTubePlayer(options: UseYouTubePlayerOptions): UseYouTubePl
     const from = slotsRef.current[fromIndex];
     const playing = from.wantsToPlay && from.state === PlayerState.PLAYING;
     if (playing) {
-      startIncoming(fromIndex, 1 - fromIndex, videoId);
+      startIncoming(fromIndex, 1 - fromIndex, videoId, startSeconds);
       return;
     }
 
     // Nothing to blend against: reuse the active slot and play the new video.
+    if (from.state === PlayerState.PAUSED) {
+      // It is holding a position that reloading the slot would destroy.
+      reportPosition(from);
+    }
     ensureWrappers();
     const slot = slotsRef.current[fromIndex];
     const other = slotsRef.current[1 - fromIndex];
@@ -524,7 +594,7 @@ export function useYouTubePlayer(options: UseYouTubePlayerOptions): UseYouTubePl
     setSlotLayer(other, 0, false);
     setSlotLayer(slot, 1, true);
 
-    loadInto(slot, videoId);
+    loadInto(slot, videoId, startSeconds);
   }
 
   /** Run an action on a slot now, or as soon as its player finishes coming up. */
@@ -573,12 +643,30 @@ export function useYouTubePlayer(options: UseYouTubePlayerOptions): UseYouTubePl
 
   const stop = useCallback(() => {
     resolveCrossfade();
+    const active = slotsRef.current[activeRef.current];
+    if (active.state === PlayerState.PLAYING || active.state === PlayerState.PAUSED) {
+      // Stopping resets the player's clock, so take the position first: Stop
+      // means "pause the evening here", not "start over".
+      reportPosition(active);
+    }
     for (const slot of slotsRef.current) {
       slot.wantsToPlay = false;
       withSlot(slot, (player) => player.stopVideo());
     }
     setSlotLayer(slotsRef.current[activeRef.current], 1, true);
     setSlotLayer(slotsRef.current[1 - activeRef.current], 0, false);
+  }, []);
+
+  useEffect(() => {
+    // A safety net: if the tab dies mid-song the last few seconds are still
+    // recoverable. Pausing, stopping and switching tracks report immediately.
+    const timer = setInterval(() => {
+      const slot = slotsRef.current[activeRef.current];
+      if (crossfadeRef.current === null && slot.state === PlayerState.PLAYING) {
+        reportPosition(slot);
+      }
+    }, POSITION_TICK_MS);
+    return () => clearInterval(timer);
   }, []);
 
   useEffect(() => {
@@ -611,7 +699,7 @@ export function useYouTubePlayer(options: UseYouTubePlayerOptions): UseYouTubePl
   implRef.current = { load, play, pause, stop };
   const controls = useMemo<YouTubeControls>(
     () => ({
-      load: (videoId) => implRef.current?.load(videoId),
+      load: (videoId, startSeconds) => implRef.current?.load(videoId, startSeconds),
       play: () => implRef.current?.play(),
       pause: () => implRef.current?.pause(),
       stop: () => implRef.current?.stop(),

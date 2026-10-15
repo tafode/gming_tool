@@ -304,10 +304,21 @@ button:focus-visible {
   width: 1em;
 }
 
+.track-label {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
 .track-title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.track-resume {
+  font-size: 11px;
+  color: var(--muted);
 }
 
 .track-delete {

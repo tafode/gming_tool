@@ -23,14 +23,20 @@ export interface VideoData {
   author?: string;
 }
 
+/** What `loadVideoById` accepts: a plain id, or one with where to start it. */
+export type LoadVideoRequest = string | { videoId: string; startSeconds?: number };
+
 export interface YTPlayer {
-  loadVideoById(videoId: string): void;
+  loadVideoById(video: LoadVideoRequest): void;
   playVideo(): void;
   pauseVideo(): void;
   stopVideo(): void;
   setVolume(volume: number): void;
   mute(): void;
   unMute(): void;
+  getCurrentTime(): number;
+  getDuration(): number;
+  seekTo(seconds: number, allowSeekAhead: boolean): void;
   getVideoData(): VideoData;
   destroy(): void;
 }

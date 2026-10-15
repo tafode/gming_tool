@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   fetchVideoTitle,
+  formatClock,
   isPlaceholderTitle,
   placeholderTitle,
   videoIdFromUrl,
@@ -54,6 +55,27 @@ describe('track titles', () => {
     expect(isPlaceholderTitle({ url, title: ID })).toBe(true);
     expect(isPlaceholderTitle({ url, title: '' })).toBe(true);
     expect(isPlaceholderTitle({ url, title: 'Tavern Ambience' })).toBe(false);
+  });
+});
+
+describe('formatting a playback position', () => {
+  it.each([
+    [0, '0:00'],
+    [5, '0:05'],
+    [59.9, '0:59'],
+    [60, '1:00'],
+    [245, '4:05'],
+    [3599, '59:59'],
+    [3600, '1:00:00'],
+    [3725, '1:02:05'],
+  ])('renders %s seconds as %s', (seconds, expected) => {
+    expect(formatClock(seconds)).toBe(expected);
+  });
+
+  it('falls back to the start for nonsense values', () => {
+    expect(formatClock(Number.NaN)).toBe('0:00');
+    expect(formatClock(-12)).toBe('0:00');
+    expect(formatClock(Number.POSITIVE_INFINITY)).toBe('0:00');
   });
 });
 

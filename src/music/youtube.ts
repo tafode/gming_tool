@@ -81,6 +81,22 @@ export function isPlaceholderTitle(track: { url: string; title: string }): boole
 }
 
 /**
+ * Format seconds as a clock: `4:05`, or `1:04:05` past the hour.
+ *
+ * Negative and un-finite input becomes `0:00`, so a stray value from the
+ * player can never render as something odd.
+ */
+export function formatClock(seconds: number): string {
+  const total = Number.isFinite(seconds) && seconds > 0 ? Math.floor(seconds) : 0;
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const rest = String(total % 60).padStart(2, '0');
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, '0')}:${rest}`
+    : `${minutes}:${rest}`;
+}
+
+/**
  * Look a video's title up through YouTube's public oEmbed endpoint.
  *
  * This is the same endpoint websites use to render link previews; it needs no

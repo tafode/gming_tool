@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ChangeEvent,
@@ -20,11 +21,13 @@ import {
 import {
   NOT_YOUTUBE_MESSAGE,
   fetchVideoTitle,
+  formatClock,
   isPlaceholderTitle,
   placeholderTitle,
   videoIdFromUrl,
 } from './music/youtube';
 import { useDocuments } from './pdf/useDocuments';
+import { createResumeStore, MIN_RESUME_SECONDS } from './player/resume';
 import { useYouTubePlayer } from './player/useYouTubePlayer';
 import { loadYouTubeApi, PlayerState } from './player/youtubeApi';
 
@@ -36,6 +39,13 @@ export default function App() {
   const [activeTrackId, setActiveTrackId] = useState<number | null>(null);
   const [playback, setPlayback] = useState<Playback>('idle');
   const [saveState, setSaveState] = useState<'saved' | 'unsaved'>('saved');
+
+  // Where each video was left off, kept outside the save document. The store is
+  // the source of truth; the state mirrors it so the track list can show it.
+  const [resume] = useState(() => createResumeStore());
+  const [resumePositions, setResumePositions] = useState<Record<string, number>>(() =>
+    resume.entries(),
+  );
 
   // The newest document, for callbacks that must not be rebuilt on every edit.
   const dataRef = useRef(data);
@@ -90,6 +100,28 @@ export default function App() {
     });
   }, []);
 
+  const handlePosition = useCallback(
+    (videoId: string, seconds: number | null) => {
+      if (seconds === null || seconds < MIN_RESUME_SECONDS) {
+        resume.clear(videoId);
+        setResumePositions((current) => {
+          if (!(videoId in current)) {
+            return current;
+          }
+          const next = { ...current };
+          delete next[videoId];
+          return next;
+        });
+        return;
+      }
+      resume.set(videoId, seconds);
+      setResumePositions((current) =>
+        current[videoId] === seconds ? current : { ...current, [videoId]: seconds },
+      );
+    },
+    [resume],
+  );
+
   const player = useYouTubePlayer({
     volume,
     onTitle: setTitleIfPlaceholder,
@@ -106,6 +138,7 @@ export default function App() {
         setPlayback('idle');
       }
     },
+    onPosition: handlePosition,
     onError: (message) => {
       setNotice(message);
       setPlayback('idle');
@@ -139,9 +172,9 @@ export default function App() {
       setNotice(null);
       setActiveTrackId(trackId);
       setPlayback('playing');
-      controls.load(videoId);
+      controls.load(videoId, resume.get(videoId) ?? undefined);
     },
-    [controls],
+    [controls, resume],
   );
 
   const handleToggleTrack = useCallback(
@@ -204,14 +237,38 @@ export default function App() {
 
   const handleDeleteTrack = useCallback(
     (trackId: number) => {
+      const removed = dataRef.current.music.tracks.find((track) => track.id === trackId);
       setData((current) => ({ ...current, music: removeTrack(current.music, trackId) }));
+
       if (trackId === activeTrackId) {
+        // Stopping reports the position before it resets the player, so this
+        // has to come before the position is forgotten below.
         controls.stop();
         setActiveTrackId(null);
         setPlayback('idle');
       }
+
+      // Forget the position too — but only if no other track still points at
+      // the same video.
+      const videoId = removed ? videoIdFromUrl(removed.url) : null;
+      const stillWanted =
+        videoId !== null &&
+        dataRef.current.music.tracks.some(
+          (track) => track.id !== trackId && videoIdFromUrl(track.url) === videoId,
+        );
+      if (videoId && !stillWanted) {
+        resume.clear(videoId);
+        setResumePositions((current) => {
+          if (!(videoId in current)) {
+            return current;
+          }
+          const next = { ...current };
+          delete next[videoId];
+          return next;
+        });
+      }
     },
-    [activeTrackId, controls],
+    [activeTrackId, controls, resume],
   );
 
   // --- import / export -----------------------------------------------------
@@ -250,6 +307,23 @@ export default function App() {
     },
     [handleImport],
   );
+
+  // Where the track list should say each track will resume from. The active
+  // track is left out: it is either already there, or starting afresh.
+  const resumeTimes = useMemo(() => {
+    const times: Record<number, string> = {};
+    for (const track of data.music.tracks) {
+      if (track.id === activeTrackId) {
+        continue;
+      }
+      const videoId = videoIdFromUrl(track.url);
+      const seconds = videoId ? resumePositions[videoId] : undefined;
+      if (seconds !== undefined && seconds >= MIN_RESUME_SECONDS) {
+        times[track.id] = formatClock(seconds);
+      }
+    }
+    return times;
+  }, [data.music.tracks, activeTrackId, resumePositions]);
 
   return (
     <div className="app">
@@ -297,6 +371,7 @@ export default function App() {
           onStop={handleStop}
           onAdd={handleAddTrack}
           onDelete={handleDeleteTrack}
+          resumeTimes={resumeTimes}
         />
       </div>
 
