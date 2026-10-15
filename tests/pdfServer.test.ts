@@ -2,14 +2,16 @@ import { promises as fs } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { homedir, tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   createPdfMiddleware,
+  findConverterInPath,
   isServablePath,
   listPdfFiles,
   parseRange,
   resolvePdfFolder,
+  type PdfMiddlewareOptions,
 } from '../tools/pdf-server';
 
 let folder: string;
@@ -17,9 +19,11 @@ let folder: string;
 beforeEach(async () => {
   folder = await fs.mkdtemp(join(tmpdir(), 'gming-pdfs-'));
   await fs.writeFile(join(folder, 'rulebook.pdf'), 'PDF-one-rulebook');
+  await fs.writeFile(join(folder, 'handbook.docx'), 'DOCX-handbook');
+  await fs.writeFile(join(folder, 'manual.odt'), 'ODT-manual');
   await fs.mkdir(join(folder, 'adventures'));
   await fs.writeFile(join(folder, 'adventures', 'Lost Mine.PDF'), 'PDF-two-lost-mine');
-  await fs.writeFile(join(folder, 'notes.txt'), 'not a pdf');
+  await fs.writeFile(join(folder, 'notes.txt'), 'not a document');
   await fs.writeFile(join(folder, '.hidden.pdf'), 'PDF-hidden');
 });
 
@@ -47,10 +51,26 @@ describe('choosing the reference folder', () => {
   });
 });
 
+describe('finding a converter', () => {
+  it('finds LibreOffice on the given PATH without running it', async () => {
+    const bin = await fs.mkdtemp(join(tmpdir(), 'gming-bin-'));
+    await fs.writeFile(join(bin, 'soffice'), '');
+
+    try {
+      expect(findConverterInPath(bin)).toBe(join(bin, 'soffice'));
+      expect(findConverterInPath('/nonexistent-empty-dir')).toBeNull();
+    } finally {
+      await fs.rm(bin, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('guarding what can be served', () => {
-  it('serves PDFs from inside the folder', () => {
+  it('serves documents from inside the folder', () => {
     expect(isServablePath('/app/pdfs', 'rulebook.pdf')).toBe(true);
     expect(isServablePath('/app/pdfs', 'adventures/Lost Mine.PDF')).toBe(true);
+    expect(isServablePath('/app/pdfs', 'handbook.docx')).toBe(true);
+    expect(isServablePath('/app/pdfs', 'manual.odt')).toBe(true);
   });
 
   it('refuses to climb out of the folder', () => {
@@ -59,7 +79,7 @@ describe('guarding what can be served', () => {
     expect(isServablePath('/app/pdfs', '/etc/secrets.pdf')).toBe(false);
   });
 
-  it('refuses anything that is not a PDF', () => {
+  it('refuses anything that is not a document', () => {
     expect(isServablePath('/app/pdfs', 'notes.txt')).toBe(false);
     expect(isServablePath('/app/pdfs', '')).toBe(false);
     expect(isServablePath('/app/pdfs', 'rulebook.pdf\0.txt')).toBe(false);
@@ -87,16 +107,29 @@ describe('reading byte ranges', () => {
 });
 
 describe('listing the folder', () => {
-  it('finds PDFs at any depth, and nothing else', async () => {
+  it('finds PDFs and office documents at any depth, and nothing else', async () => {
     const documents = await listPdfFiles(folder);
 
     expect(documents.map((document) => document.path)).toEqual([
       'adventures/Lost Mine.PDF',
+      'handbook.docx',
+      'manual.odt',
       'rulebook.pdf',
     ]);
-    expect(documents.map((document) => document.name)).toEqual(['Lost Mine', 'rulebook']);
-    expect(documents[1].size).toBeGreaterThan(0);
-    expect(documents[1].modified).toBeGreaterThan(0);
+    expect(documents.map((document) => document.name)).toEqual([
+      'Lost Mine',
+      'handbook',
+      'manual',
+      'rulebook',
+    ]);
+    expect(documents.map((document) => document.kind)).toEqual([
+      'pdf',
+      'office',
+      'office',
+      'pdf',
+    ]);
+    expect(documents[3].size).toBeGreaterThan(0);
+    expect(documents[3].modified).toBeGreaterThan(0);
   });
 
   it('finds nothing in a folder that is not there', async () => {
@@ -104,8 +137,15 @@ describe('listing the folder', () => {
   });
 });
 
-async function withServer(run: (baseUrl: string) => Promise<void>): Promise<void> {
-  const middleware = createPdfMiddleware(folder);
+async function withServer(
+  run: (baseUrl: string) => Promise<void>,
+  overrides: PdfMiddlewareOptions = {},
+): Promise<void> {
+  const middleware = createPdfMiddleware(folder, {
+    // A dot-folder, so the listing walker skips it.
+    cacheDir: join(folder, '.cache'),
+    ...overrides,
+  });
   const server = createServer((request, response) => {
     middleware(request, response, () => {
       response.statusCode = 404;
@@ -125,23 +165,42 @@ async function withServer(run: (baseUrl: string) => Promise<void>): Promise<void
   }
 }
 
+/** A stand-in conversion that writes a recognisable PDF, counting its uses. */
+function fakeConvert() {
+  const state = { calls: 0 };
+  const convert: NonNullable<PdfMiddlewareOptions['convert']> = async (source, outDir) => {
+    state.calls += 1;
+    const produced = `${basename(source).replace(/\.[^.]+$/, '')}.pdf`;
+    await fs.writeFile(join(outDir, produced), 'converted-pdf-bytes');
+  };
+  return { state, convert };
+}
+
 describe('serving the shelf', () => {
   it('publishes the listing the panel reads', async () => {
-    await withServer(async (baseUrl) => {
-      const response = await fetch(`${baseUrl}/pdfs/index.json`);
-      const listing = (await response.json()) as {
-        folder: string;
-        documents: { path: string }[];
-      };
+    await withServer(
+      async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/pdfs/index.json`);
+        const listing = (await response.json()) as {
+          folder: string;
+          converter: string | null;
+          documents: { path: string; kind: string }[];
+        };
 
-      expect(response.status).toBe(200);
-      expect(response.headers.get('cache-control')).toBe('no-store');
-      expect(listing.folder).toBe(folder);
-      expect(listing.documents.map((document) => document.path)).toContain('rulebook.pdf');
-    });
+        expect(response.status).toBe(200);
+        expect(response.headers.get('cache-control')).toBe('no-store');
+        expect(listing.folder).toBe(folder);
+        expect(listing.converter).toBe('soffice');
+        expect(listing.documents.map((document) => document.path)).toContain('handbook.docx');
+        expect(listing.documents.find((document) => document.path === 'handbook.docx')?.kind).toBe(
+          'office',
+        );
+      },
+      { detectConverter: async () => 'soffice' },
+    );
   });
 
-  it('sends a document whole', async () => {
+  it('sends a PDF whole', async () => {
     await withServer(async (baseUrl) => {
       const response = await fetch(`${baseUrl}/pdfs/rulebook.pdf`);
 
@@ -150,6 +209,69 @@ describe('serving the shelf', () => {
       expect(response.headers.get('accept-ranges')).toBe('bytes');
       expect(await response.text()).toBe('PDF-one-rulebook');
     });
+  });
+
+  it('converts an office document and serves it as a PDF', async () => {
+    const { state, convert } = fakeConvert();
+
+    await withServer(
+      async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/pdfs/handbook.docx`);
+
+        expect(response.status).toBe(200);
+        expect(response.headers.get('content-type')).toBe('application/pdf');
+        expect(await response.text()).toBe('converted-pdf-bytes');
+      },
+      { detectConverter: async () => 'soffice', convert },
+    );
+
+    expect(state.calls).toBe(1);
+  });
+
+  it('converts once, then answers from the cache', async () => {
+    const { state, convert } = fakeConvert();
+
+    await withServer(
+      async (baseUrl) => {
+        const first = await fetch(`${baseUrl}/pdfs/manual.odt`);
+        const second = await fetch(`${baseUrl}/pdfs/manual.odt`);
+
+        expect(await first.text()).toBe('converted-pdf-bytes');
+        expect(await second.text()).toBe('converted-pdf-bytes');
+      },
+      { detectConverter: async () => 'soffice', convert },
+    );
+
+    expect(state.calls).toBe(1);
+  });
+
+  it('streams a range out of a converted document', async () => {
+    const { convert } = fakeConvert();
+
+    await withServer(
+      async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/pdfs/handbook.docx`, {
+          headers: { range: 'bytes=0-3' },
+        });
+
+        expect(response.status).toBe(206);
+        expect(response.headers.get('content-range')).toBe('bytes 0-3/19');
+        expect(await response.text()).toBe('conv');
+      },
+      { detectConverter: async () => 'soffice', convert },
+    );
+  });
+
+  it('says so when there is no converter for an office document', async () => {
+    await withServer(
+      async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/pdfs/handbook.docx`);
+
+        expect(response.status).toBe(503);
+        expect(await response.text()).toContain('LibreOffice');
+      },
+      { detectConverter: async () => null },
+    );
   });
 
   it('streams a range, which is how a viewer seeks', async () => {
@@ -184,10 +306,10 @@ describe('serving the shelf', () => {
       // The path arrives encoded, so it survives URL normalisation and reaches
       // the guard as a traversal attempt.
       const escaped = await fetch(`${baseUrl}/pdfs/..%2Fpdf-server.test.ts`);
-      const notPdf = await fetch(`${baseUrl}/pdfs/notes.txt`);
+      const notDocument = await fetch(`${baseUrl}/pdfs/notes.txt`);
 
       expect(escaped.status).toBe(404);
-      expect(notPdf.status).toBe(404);
+      expect(notDocument.status).toBe(404);
     });
   });
 

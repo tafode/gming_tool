@@ -15,12 +15,17 @@ vi.mock('../src/player/youtubeApi', () => ({
 const VIDEO_URL = 'https://youtu.be/dQw4w9WgXcQ';
 const VIDEO_ID = 'dQw4w9WgXcQ';
 
+const DOCUMENTS: PdfDocumentInfo[] = [
+  { path: 'rulebook.pdf', name: 'rulebook', size: 2048, modified: 1700000000, kind: 'pdf' },
+  { path: 'notes.docx', name: 'notes', size: 1024, modified: 1700000001, kind: 'office' },
+];
+
 /**
- * Stub the two things the app reaches out for.
+ * Stub the one thing the app reaches out for on load: the reference listing.
  *
- * The reference listing only resolves when a test asks for it: a shelf that
- * never arrives keeps the drawer quiet in tests that are not about the drawer,
- * so no state settles after a test has finished.
+ * It only resolves when a test asks for it: a shelf that never arrives keeps the
+ * sidebar quiet in tests that are not about it, so no state settles after a test
+ * has finished.
  */
 function stubFetch(documents?: PdfDocumentInfo[]): void {
   vi.stubGlobal(
@@ -33,7 +38,12 @@ function stubFetch(documents?: PdfDocumentInfo[]): void {
         return Promise.resolve({
           ok: true,
           status: 200,
-          json: () => Promise.resolve({ folder: '/home/marco/gming_tool/pdfs', documents }),
+          json: () =>
+            Promise.resolve({
+              folder: '/home/marco/gming_tool/pdfs',
+              converter: 'soffice',
+              documents,
+            }),
         });
       }
       // oEmbed title lookups are not part of these tests.
@@ -62,31 +72,23 @@ describe('the GMing tool', () => {
     vi.unstubAllGlobals();
   });
 
-  it('starts with one chapter and adds more', () => {
+  it('lists the documents and reads one in the viewer', async () => {
+    stubFetch(DOCUMENTS);
     render(<App />);
-    expect(screen.getByRole('button', { name: 'Chapter 1' })).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: 'New chapter' }));
+    expect(await screen.findByRole('button', { name: /rulebook/ })).toBeTruthy();
 
-    expect(screen.getByRole('button', { name: 'Chapter 2' })).toBeTruthy();
-    expect(screen.getByRole('heading', { name: 'Chapter 2' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /rulebook/ }));
+
+    const viewer = screen.getByTitle('rulebook — page 1') as HTMLIFrameElement;
+    expect(viewer.getAttribute('src')).toBe('/pdfs/rulebook.pdf#page=1');
   });
 
-  it('keeps each chapter’s text to itself', () => {
+  it('points at the folder when there are no documents', async () => {
+    stubFetch([]);
     render(<App />);
-    fireEvent.click(screen.getByRole('button', { name: 'New chapter' }));
 
-    fireEvent.change(screen.getByLabelText('Story text of Chapter 2'), {
-      target: { value: 'the second chapter' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Chapter 1' }));
-
-    const first = screen.getByLabelText('Story text of Chapter 1') as HTMLTextAreaElement;
-    expect(first.value).toBe('');
-
-    fireEvent.click(screen.getByRole('button', { name: 'Chapter 2' }));
-    const second = screen.getByLabelText('Story text of Chapter 2') as HTMLTextAreaElement;
-    expect(second.value).toBe('the second chapter');
+    expect(await screen.findByText(/No documents in/)).toBeTruthy();
   });
 
   it('adds a link and plays it', () => {
@@ -141,16 +143,13 @@ describe('the GMing tool', () => {
     );
   });
 
-  it('remembers edits and music across a reload', async () => {
+  it('remembers music across a reload', async () => {
     const first = render(<App />);
-    fireEvent.change(screen.getByLabelText('Story text of Chapter 1'), {
-      target: { value: 'The inn at dusk' },
-    });
     addLink(VIDEO_URL);
 
     await waitFor(
       () => {
-        expect(localStorage.getItem(SAVE_KEY)).toContain('The inn at dusk');
+        expect(localStorage.getItem(SAVE_KEY)).toContain(VIDEO_ID);
       },
       { timeout: 4000 },
     );
@@ -158,26 +157,6 @@ describe('the GMing tool', () => {
     first.unmount();
     render(<App />);
 
-    expect((screen.getByLabelText('Story text of Chapter 1') as HTMLTextAreaElement).value).toBe(
-      'The inn at dusk',
-    );
     expect(screen.getByRole('button', { name: VIDEO_ID })).toBeTruthy();
-  });
-
-  it('keeps a reference drawer under the story, folded away by default', async () => {
-    stubFetch([]);
-    render(<App />);
-
-    expect(screen.getByRole('button', { name: '▸ Reference' })).toBeTruthy();
-    expect(screen.queryByLabelText('Search reference documents')).toBeNull();
-
-    fireEvent.click(screen.getByRole('button', { name: '▸ Reference' }));
-
-    expect(screen.getByLabelText('Search reference documents')).toBeTruthy();
-    expect(await screen.findByText(/No PDFs in/)).toBeTruthy();
-
-    fireEvent.click(screen.getByRole('button', { name: '▾ Reference' }));
-
-    expect(screen.queryByLabelText('Search reference documents')).toBeNull();
   });
 });

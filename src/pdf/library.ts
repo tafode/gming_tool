@@ -1,4 +1,4 @@
-//! The reference shelf: what the launcher found in the PDF folder.
+//! The reference shelf: what the launcher found in the documents folder.
 //!
 //! The browser is told this by the server that serves the app, so the app never
 //! needs filesystem access of its own.
@@ -9,6 +9,9 @@ export const PDF_LIST_URL = '/pdfs/index.json';
 /** Prefix every document is served under. */
 export const PDF_ROUTE = '/pdfs/';
 
+/** `pdf` for a PDF, `office` for a `.docx`/`.odt` the server converts for us. */
+export type DocumentKind = 'pdf' | 'office';
+
 export interface PdfDocumentInfo {
   /** Path relative to the reference folder, always with forward slashes. */
   path: string;
@@ -18,15 +21,24 @@ export interface PdfDocumentInfo {
   size: number;
   /** Last modification time in epoch milliseconds, likewise. */
   modified: number;
+  /** Whether the document is a PDF or has to be converted before it can be read. */
+  kind: DocumentKind;
 }
 
 export interface PdfLibrary {
   /** Absolute path of the folder, shown when it is empty. */
   folder: string;
   documents: PdfDocumentInfo[];
+  /** The document converter the server found, or `null` if it found none. */
+  converter: string | null;
 }
 
-/** The URL a document is served from, escaping each path segment. */
+/**
+ * The URL a document is served from, escaping each path segment.
+ *
+ * An office document is served as a PDF by the server, so this one URL works
+ * for the viewer and for text extraction alike.
+ */
 export function pdfUrl(path: string): string {
   const encoded = path
     .split('/')
@@ -34,6 +46,21 @@ export function pdfUrl(path: string): string {
     .map(encodeURIComponent)
     .join('/');
   return PDF_ROUTE + encoded;
+}
+
+/** A short label for an office document's format, or `null` for a PDF. */
+export function kindLabel(document: PdfDocumentInfo): string | null {
+  if (document.kind === 'pdf') {
+    return null;
+  }
+  const lower = document.path.toLowerCase();
+  if (lower.endsWith('.docx')) {
+    return 'Word';
+  }
+  if (lower.endsWith('.odt')) {
+    return 'ODT';
+  }
+  return 'Doc';
 }
 
 /** A readable size for the shelf listing, e.g. `4.2 MB`. */
@@ -60,6 +87,10 @@ function asCount(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
 }
 
+function asKind(value: unknown): DocumentKind {
+  return value === 'office' ? 'office' : 'pdf';
+}
+
 /**
  * Read a listing, tolerating anything unexpected.
  *
@@ -69,6 +100,7 @@ function asCount(value: unknown): number {
 export function parseLibrary(body: unknown): PdfLibrary {
   const root = isRecord(body) ? body : {};
   const folder = typeof root.folder === 'string' ? root.folder : '';
+  const converter = typeof root.converter === 'string' ? root.converter : null;
   const raw = Array.isArray(root.documents) ? root.documents : [];
 
   const documents: PdfDocumentInfo[] = [];
@@ -82,10 +114,11 @@ export function parseLibrary(body: unknown): PdfLibrary {
         typeof entry.name === 'string' && entry.name.trim() !== '' ? entry.name : entry.path,
       size: asCount(entry.size),
       modified: asCount(entry.modified),
+      kind: asKind(entry.kind),
     });
   }
 
-  return { folder, documents };
+  return { folder, documents, converter };
 }
 
 export async function fetchPdfLibrary(signal?: AbortSignal): Promise<PdfLibrary> {

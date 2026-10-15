@@ -33,7 +33,6 @@ describe('loading a document', () => {
     const { data, notice } = loadDocument(storage);
 
     expect(notice).toBeUndefined();
-    expect(data.story.chapters).toHaveLength(1);
     expect(data.music.tracks).toEqual([]);
   });
 
@@ -58,7 +57,7 @@ describe('loading a document', () => {
     const { data, notice } = loadDocument(storage);
 
     expect(notice).toMatch(/could not be read/);
-    expect(data.story.chapters).toHaveLength(1);
+    expect(data.music.tracks).toEqual([]);
     expect(storage.getItem(BACKUP_KEY)).toBe('{ this is not json');
     expect(storage.getItem(SAVE_KEY)).toBeNull();
   });
@@ -74,14 +73,14 @@ describe('loading a document', () => {
 
     const { data, notice } = loadDocument(hostile);
 
-    expect(data.story.chapters).toHaveLength(1);
+    expect(data.music.tracks).toEqual([]);
     expect(notice).toMatch(/does not allow local storage/);
   });
 
   it('writes readable JSON', () => {
     const text = serializeDocument(newSaveData());
-    expect(text).toContain('"schema_version": 1');
-    expect(JSON.parse(text).story.chapters).toHaveLength(1);
+    expect(text).toContain('"schema_version": 2');
+    expect(JSON.parse(text).music.tracks).toEqual([]);
   });
 });
 

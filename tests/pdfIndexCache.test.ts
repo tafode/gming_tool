@@ -13,6 +13,7 @@ const document: PdfDocumentInfo = {
   name: 'rulebook',
   size: 4096,
   modified: 1700000000,
+  kind: 'pdf',
 };
 
 let factory: IDBFactory;

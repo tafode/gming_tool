@@ -4,15 +4,18 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-# Reference PDFs: a folder of rulebooks and adventures to look things up in.
-# Point it elsewhere with: PDF_DIR=/somewhere/else ./dev.sh
-PDF_DIR="${PDF_DIR:-$PWD/pdfs}"
-case "$PDF_DIR" in
-  "~") PDF_DIR="$HOME" ;;
-  "~/"*) PDF_DIR="$HOME/${PDF_DIR#\~/}" ;;
+# Reference documents: a folder of PDFs, Word (.docx) and OpenDocument (.odt)
+# files to look things up in. Point it elsewhere with:
+#   DOC_DIR=/somewhere/else ./dev.sh
+DOC_DIR="${DOC_DIR:-${PDF_DIR:-$PWD/pdfs}}"
+case "$DOC_DIR" in
+  "~") DOC_DIR="$HOME" ;;
+  "~/"*) DOC_DIR="$HOME/${DOC_DIR#\~/}" ;;
 esac
-export PDF_DIR
-mkdir -p "$PDF_DIR"
+export DOC_DIR
+# Kept so older setups that only know PDF_DIR keep working.
+export PDF_DIR="$DOC_DIR"
+mkdir -p "$DOC_DIR"
 
 command -v npm >/dev/null 2>&1 || {
   echo "error: npm was not found — install Node.js 20 or newer first" >&2

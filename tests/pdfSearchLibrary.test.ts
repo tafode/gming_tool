@@ -12,6 +12,7 @@ const rulebook: PdfDocumentInfo = {
   name: 'rulebook',
   size: 100,
   modified: 1,
+  kind: 'pdf',
 };
 
 const adventure: PdfDocumentInfo = {
@@ -19,6 +20,7 @@ const adventure: PdfDocumentInfo = {
   name: 'adventure',
   size: 200,
   modified: 2,
+  kind: 'pdf',
 };
 
 /** Fake dependencies: an in-memory cache and an extractor that counts its use. */

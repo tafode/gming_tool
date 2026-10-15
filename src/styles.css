@@ -69,7 +69,7 @@ button:focus-visible {
 
 .app {
   display: grid;
-  grid-template-rows: auto 1fr auto auto;
+  grid-template-rows: auto 1fr auto;
   height: 100%;
 }
 
@@ -315,49 +315,19 @@ button:focus-visible {
   color: var(--muted);
 }
 
-/* Reference drawer ------------------------------------------------------- */
+/* Documents --------------------------------------------------------------- */
 
-.reference {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
+.documents {
   background: var(--panel);
-  border-top: 1px solid var(--border);
 }
 
-.reference-handle {
-  height: 6px;
-  cursor: row-resize;
-  flex: none;
-}
-
-.reference-handle:hover {
-  background: var(--accent);
-  opacity: 0.4;
-}
-
-.reference-bar {
+.documents-search {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 12px;
-  border-bottom: 1px solid var(--border);
-  flex: none;
+  gap: 6px;
 }
 
-.reference-toggle {
-  background: transparent;
-  border-color: transparent;
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--muted);
-}
-
-.reference-search {
+.documents-search input {
   flex: 1;
-  max-width: 420px;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -365,45 +335,22 @@ button:focus-visible {
   min-width: 0;
 }
 
-.reference-summary {
+.documents-summary {
   color: var(--muted);
   font-size: 12px;
+  margin: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.reference-body {
+.documents-body {
   flex: 1;
-  display: grid;
-  grid-template-columns: 300px minmax(0, 1fr);
-  min-height: 0;
-}
-
-.reference-body > * + * {
-  border-left: 1px solid var(--border);
-}
-
-.reference-shelf {
   min-height: 0;
   overflow-y: auto;
-  padding: 8px;
 }
 
-.reference-pane {
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  background: #525659;
-}
-
-.reference-viewer {
-  flex: 1;
-  width: 100%;
-  border: 0;
-}
-
-.reference-list {
+.documents-list {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -412,35 +359,45 @@ button:focus-visible {
   gap: 2px;
 }
 
-.reference-document {
+.document-button {
   width: 100%;
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
   text-align: left;
   background: transparent;
   border-color: transparent;
 }
 
-.reference-document[aria-current='true'] {
+.document-button[aria-current='true'] {
   background: var(--raised);
   border-color: var(--accent);
 }
 
-.reference-document-name {
+.document-name {
+  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.reference-document-size {
+.document-badge {
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+.document-size {
   color: var(--muted);
   font-size: 11px;
   white-space: nowrap;
 }
 
-.reference-results ul {
+.search-results ul {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -449,7 +406,7 @@ button:focus-visible {
   gap: 4px;
 }
 
-.reference-hit {
+.search-hit {
   width: 100%;
   display: flex;
   flex-direction: column;
@@ -459,26 +416,46 @@ button:focus-visible {
   border-color: transparent;
 }
 
-.reference-hit-where {
+.search-hit-where {
   color: var(--muted);
   font-size: 11px;
 }
 
-.reference-hit-snippet {
+.search-hit-snippet {
   font-size: 12px;
   line-height: 1.4;
 }
 
-.reference-hit-snippet mark {
+.search-hit-snippet mark {
   background: rgba(122, 162, 247, 0.35);
   color: inherit;
   border-radius: 3px;
 }
 
-.reference-note {
+/* The reading pane -------------------------------------------------------- */
+
+.viewer {
+  background: var(--panel);
+}
+
+.viewer-pane {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.viewer-frame {
+  flex: 1;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #525659;
+}
+
+.note {
   color: var(--muted);
   font-size: 12px;
-  margin: 8px 10px;
+  margin: 8px 0;
 }
 
 /* Status ----------------------------------------------------------------- */

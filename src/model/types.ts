@@ -1,24 +1,15 @@
-//! Data model: the story chapters and the music library.
+//! Data model: the music library.
+//!
+//! The story used to live here too. It is now made of documents that sit in the
+//! reference folder and are read in place, so all that is left to save is music.
+//! The save format carries a `schema_version` so older files keep importing: a
+//! legacy `story` section is simply ignored.
 //!
 //! Deliberately free of UI and persistence concerns; `store` handles saving and
-//! loading. The shapes here are byte-for-byte compatible with the JSON the
-//! original Rust build wrote, so existing `save.json` files import unchanged.
+//! loading.
 
 /** The save format version this build writes and understands. */
-export const CURRENT_SCHEMA_VERSION = 1;
-
-export interface Chapter {
-  id: number;
-  /** Display name, e.g. `"Chapter 1"`. Stored so it can be renamed later. */
-  title: string;
-  /** The chapter's story text. */
-  text: string;
-}
-
-export interface Story {
-  chapters: Chapter[];
-  next_id: number;
-}
+export const CURRENT_SCHEMA_VERSION = 2;
 
 /** A single piece of music, referenced by its YouTube URL. */
 export interface Track {
@@ -37,7 +28,6 @@ export interface MusicLibrary {
 /** Everything that gets persisted. */
 export interface SaveData {
   schema_version: number;
-  story: Story;
   music: MusicLibrary;
 }
 
@@ -47,35 +37,6 @@ export class SaveFormatError extends Error {
     super(message);
     this.name = 'SaveFormatError';
   }
-}
-
-function addChapterTo(story: Story): { story: Story; id: number } {
-  const chapter: Chapter = {
-    id: story.next_id,
-    title: `Chapter ${story.next_id}`,
-    text: '',
-  };
-  return {
-    story: { chapters: [...story.chapters, chapter], next_id: story.next_id + 1 },
-    id: chapter.id,
-  };
-}
-
-/** Append a new empty chapter. Chapters are auto-named `"Chapter N"`. */
-export function addChapter(story: Story): { story: Story; id: number } {
-  return addChapterTo(story);
-}
-
-/** A fresh story seeded with a single empty chapter. */
-export function newStory(): Story {
-  return addChapterTo({ chapters: [], next_id: 1 }).story;
-}
-
-export function setChapterText(story: Story, id: number, text: string): Story {
-  return {
-    ...story,
-    chapters: story.chapters.map((chapter) => (chapter.id === id ? { ...chapter, text } : chapter)),
-  };
 }
 
 /** Create an empty library. */
@@ -108,9 +69,9 @@ export function setTrackTitle(library: MusicLibrary, id: number, title: string):
   };
 }
 
-/** A fresh document: one empty chapter, no music. */
+/** A fresh document: no music. */
 export function newSaveData(): SaveData {
-  return { schema_version: CURRENT_SCHEMA_VERSION, story: newStory(), music: emptyLibrary() };
+  return { schema_version: CURRENT_SCHEMA_VERSION, music: emptyLibrary() };
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -130,8 +91,9 @@ function asNumber(value: unknown, fallback: number): number {
 /**
  * Parse and validate save data, bringing older documents forward.
  *
- * Mirrors the Rust loader: a missing `schema_version` means "current", a missing
- * `music` section means "no tracks", and anything newer than this build
+ * A missing `schema_version` means "current", a missing `music` section means
+ * "no tracks", and a legacy `story` section (from before documents replaced
+ * chapters) is ignored rather than refused. Anything newer than this build
  * understands is refused rather than silently mangled.
  */
 export function parseSaveData(text: string): SaveData {
@@ -153,33 +115,6 @@ export function parseSaveData(text: string): SaveData {
       `the save file uses schema version ${version}, but this build only supports up to ${CURRENT_SCHEMA_VERSION}`,
     );
   }
-
-  const storyRaw = asRecord(root.story);
-  if (!storyRaw) {
-    throw new SaveFormatError('the saved data has no story');
-  }
-  if (!Array.isArray(storyRaw.chapters)) {
-    throw new SaveFormatError('the story has no list of chapters');
-  }
-
-  const chapters: Chapter[] = storyRaw.chapters.map((entry, index) => {
-    const chapter = asRecord(entry);
-    if (!chapter) {
-      throw new SaveFormatError(`chapter ${index + 1} is not an object`);
-    }
-    const id = asNumber(chapter.id, index + 1);
-    return {
-      id,
-      title: asString(chapter.title, `Chapter ${id}`),
-      text: asString(chapter.text, ''),
-    };
-  });
-
-  const nextChapterId = Math.max(
-    asNumber(storyRaw.next_id, 0),
-    ...chapters.map((chapter) => chapter.id + 1),
-    1,
-  );
 
   // Older saves predate the music feature, so a missing section is not an error.
   const musicRaw = asRecord(root.music) ?? {};
@@ -205,7 +140,6 @@ export function parseSaveData(text: string): SaveData {
 
   return {
     schema_version: CURRENT_SCHEMA_VERSION,
-    story: { chapters, next_id: nextChapterId },
     music: { tracks, next_id: nextTrackId },
   };
 }

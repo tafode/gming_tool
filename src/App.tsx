@@ -1,24 +1,19 @@
 import {
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
   type ChangeEvent,
-  type PointerEvent as ReactPointerEvent,
 } from 'react';
-import { ChapterEditor } from './components/ChapterEditor';
-import { ChapterSidebar } from './components/ChapterSidebar';
+import { DocumentSidebar } from './components/DocumentSidebar';
+import { DocumentViewer } from './components/DocumentViewer';
 import { MusicPanel, type Playback } from './components/MusicPanel';
-import { ReferencePanel } from './components/ReferencePanel';
 import { StatusBar } from './components/StatusBar';
 import { createAutosaver, downloadDocument, loadDocument, saveDocument } from './model/store';
 import {
-  addChapter,
   addTrack,
   parseSaveData,
   removeTrack,
-  setChapterText,
   setTrackTitle,
   type SaveData,
 } from './model/types';
@@ -29,29 +24,18 @@ import {
   placeholderTitle,
   videoIdFromUrl,
 } from './music/youtube';
+import { useDocuments } from './pdf/useDocuments';
 import { useYouTubePlayer } from './player/useYouTubePlayer';
 import { loadYouTubeApi, PlayerState } from './player/youtubeApi';
-import {
-  clampReferenceHeight,
-  loadReferenceLayout,
-  saveReferenceLayout,
-} from './pdf/preferences';
 
 export default function App() {
   const [initial] = useState(loadDocument);
   const [data, setData] = useState<SaveData>(initial.data);
-  const [selectedChapterId, setSelectedChapterId] = useState<number | null>(
-    initial.data.story.chapters[0]?.id ?? null,
-  );
   const [notice, setNotice] = useState<string | null>(initial.notice ?? null);
   const [volume, setVolume] = useState(0.7);
   const [activeTrackId, setActiveTrackId] = useState<number | null>(null);
   const [playback, setPlayback] = useState<Playback>('idle');
   const [saveState, setSaveState] = useState<'saved' | 'unsaved'>('saved');
-
-  // How the reference drawer was left. Kept out of the story document, so
-  // exports stay small and the save schema is untouched.
-  const [reference, setReference] = useState(loadReferenceLayout);
 
   // The newest document, for callbacks that must not be rebuilt on every edit.
   const dataRef = useRef(data);
@@ -89,33 +73,9 @@ export default function App() {
     };
   }, [autosaver]);
 
-  // --- reference drawer ----------------------------------------------------
+  // --- documents -----------------------------------------------------------
 
-  useEffect(() => {
-    saveReferenceLayout(reference);
-  }, [reference]);
-
-  const startReferenceResize = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    const handle = event.currentTarget;
-    handle.setPointerCapture(event.pointerId);
-
-    const move = (moveEvent: PointerEvent) => {
-      setReference({
-        open: true,
-        height: clampReferenceHeight(window.innerHeight - moveEvent.clientY),
-      });
-    };
-    const finish = () => {
-      handle.removeEventListener('pointermove', move);
-      handle.removeEventListener('pointerup', finish);
-      handle.removeEventListener('pointercancel', finish);
-    };
-
-    handle.addEventListener('pointermove', move);
-    handle.addEventListener('pointerup', finish);
-    handle.addEventListener('pointercancel', finish);
-  }, []);
+  const documents = useDocuments();
 
   // --- music ---------------------------------------------------------------
 
@@ -254,27 +214,6 @@ export default function App() {
     [activeTrackId, controls],
   );
 
-  // --- story ---------------------------------------------------------------
-
-  const handleAddChapter = useCallback(() => {
-    const nextId = dataRef.current.story.next_id;
-    setData((current) => ({ ...current, story: addChapter(current.story).story }));
-    setSelectedChapterId(nextId);
-  }, []);
-
-  const handleChapterText = useCallback(
-    (text: string) => {
-      if (selectedChapterId === null) {
-        return;
-      }
-      setData((current) => ({
-        ...current,
-        story: setChapterText(current.story, selectedChapterId, text),
-      }));
-    },
-    [selectedChapterId],
-  );
-
   // --- import / export -----------------------------------------------------
 
   const handleExport = useCallback(() => {
@@ -289,7 +228,6 @@ export default function App() {
           controls.stop();
           setActiveTrackId(null);
           setPlayback('idle');
-          setSelectedChapterId(imported.story.chapters[0]?.id ?? null);
           setData(imported);
           setNotice(`Imported ${file.name}.`);
         } catch (error) {
@@ -313,11 +251,6 @@ export default function App() {
     [handleImport],
   );
 
-  const selectedChapter = useMemo(
-    () => data.story.chapters.find((chapter) => chapter.id === selectedChapterId) ?? null,
-    [data.story.chapters, selectedChapterId],
-  );
-
   return (
     <div className="app">
       <header className="app-header">
@@ -333,13 +266,25 @@ export default function App() {
       </header>
 
       <div className="app-body">
-        <ChapterSidebar
-          chapters={data.story.chapters}
-          selectedId={selectedChapterId}
-          onSelect={setSelectedChapterId}
-          onAdd={handleAddChapter}
+        <DocumentSidebar
+          documents={documents.documents}
+          library={documents.library}
+          loading={documents.loading}
+          error={documents.error}
+          activePath={documents.activePath}
+          search={documents.search}
+          onSelect={documents.open}
+          onOpenResult={documents.open}
+          onRefresh={documents.refresh}
         />
-        <ChapterEditor chapter={selectedChapter} onChange={handleChapterText} />
+        <DocumentViewer
+          document={documents.active}
+          page={documents.page}
+          revision={documents.revision}
+          converter={documents.converter}
+          preparing={documents.preparing}
+          error={documents.viewerError}
+        />
         <MusicPanel
           tracks={data.music.tracks}
           activeTrackId={activeTrackId}
@@ -354,15 +299,6 @@ export default function App() {
           onDelete={handleDeleteTrack}
         />
       </div>
-
-      <ReferencePanel
-        collapsed={!reference.open}
-        height={reference.height}
-        onToggleCollapsed={() =>
-          setReference((current) => ({ ...current, open: !current.open }))
-        }
-        onResizeStart={startReferenceResize}
-      />
 
       <StatusBar
         saveState={saveState}

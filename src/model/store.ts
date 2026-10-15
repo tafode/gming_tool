@@ -37,7 +37,7 @@ export function serializeDocument(data: SaveData): string {
  * Load the document, or a fresh one if nothing is stored yet.
  *
  * Unreadable data is copied to [`BACKUP_KEY`] rather than discarded, so a bad
- * write never destroys the user's story.
+ * write never destroys the user's saved data.
  */
 export function loadDocument(storage: StorageLike = window.localStorage): LoadResult {
   let stored: string | null = null;
@@ -65,7 +65,7 @@ export function loadDocument(storage: StorageLike = window.localStorage): LoadRe
     }
     return {
       data: newSaveData(),
-      notice: `the saved data could not be read (${reason}); a copy was kept and a fresh story started`,
+      notice: `the saved data could not be read (${reason}); a copy was kept and a fresh library started`,
     };
   }
 }
