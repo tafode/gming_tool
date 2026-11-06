@@ -76,8 +76,11 @@ auto-open the browser there — just visit the printed URL).
 project (see below) and they appear in the list on the left. Click one and it
 opens in your browser's own PDF viewer; a `.docx` or `.odt` is converted to PDF
 first and then shown the same way, so its pages, zoom and the viewer's own
-`⌘/Ctrl-F` all work as usual. The search box finds a phrase across **every**
-document at once.
+`⌘/Ctrl-F` all work as usual. **Each document you open gets its own tab** above
+the reading pane — click a tab to switch back to a book, or its `×` to close it.
+The open documents stay loaded behind the tabs, so switching keeps your exact
+place in each one. The search box finds a phrase across **every** document at
+once.
 
 **Music** — paste a YouTube link (watch, `youtu.be`, `embed`, `shorts` or `live`
 URLs, or a bare video id), click a track to play it, and use play/pause, stop and
@@ -110,8 +113,14 @@ pdfs/
   converted to PDF by LibreOffice when you first open them, and the result is
   cached, so the second look is instant. Converting takes a moment on a long
   document; the pane says so while it works.
-- **Reading** — click a document and it opens in your browser's own PDF viewer,
-  so its built-in search, page box and zoom all work as usual.
+- **Reading** — click a document and it opens in your browser's own PDF viewer.
+  Each document opens in its own tab above the pane; click a tab to switch
+  between the books you have open, or a tab's `×` to close it. Every open
+  document stays loaded in the background, so switching tabs keeps its scroll
+  position and zoom, not just the page — and each is remembered the next time
+  the app starts. Its built-in search, page box and zoom still work as usual.
+  (Opening a document you already have open just brings its tab forward rather
+  than opening a second copy.)
 - **Searching** — the box at the top searches **every** document at once — the
   extracted text of each book is read once (pdf.js, a page at a time, with
   progress shown), then cached in the browser and reused. For a Word or
@@ -173,13 +182,13 @@ src/player/resume.ts           where each track was left off
 src/player/useYouTubePlayer.ts the players, the crossfade between them, and
                                sampling playback positions
 src/pdf/library.ts             the shelf: what the server found in the folder
-src/pdf/useDocuments.ts        the shelf, the search, and which page is open
+src/pdf/useDocuments.ts        the shelf, the search, and the open document tabs
 src/pdf/extract.ts             reading a text layer out with pdf.js
 src/pdf/search.ts              matching a phrase, cutting a snippet
 src/pdf/searchLibrary.ts       cache-first search across the whole shelf
 src/pdf/index-cache.ts         the extracted-text cache (IndexedDB)
-src/components/                DocumentSidebar, DocumentViewer, MusicPanel,
-                               StatusBar
+src/components/                DocumentSidebar, DocumentTabBar, DocumentArea,
+                               DocumentViewer, MusicPanel, StatusBar
 tools/pdf-server.ts            serves the folder, and converts office files
 pdfs/                          your reference documents (not version controlled)
 tests/                         vitest suites

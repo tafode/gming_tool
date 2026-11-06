@@ -449,10 +449,80 @@ button:focus-visible {
   background: var(--panel);
 }
 
-.viewer-pane {
+.document-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-height: 0;
+}
+
+.document-tab {
+  display: flex;
+  align-items: center;
+  max-width: 220px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.document-tab[data-active='true'] {
+  background: var(--raised);
+  border-color: var(--accent);
+}
+
+.document-tab-label {
+  min-width: 0;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 4px 8px;
+}
+
+.document-tab[data-active='true'] .document-tab-label {
+  color: var(--text);
+}
+
+.document-tab-label:hover {
+  border: none;
+  color: var(--accent);
+}
+
+.document-tab-close {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 4px 8px;
+  color: var(--muted);
+  line-height: 1;
+}
+
+.document-tab-close:hover {
+  border: none;
+  color: var(--text);
+}
+
+.viewer-stack {
   flex: 1;
   min-height: 0;
+  display: grid;
+}
+
+.viewer-pane {
+  grid-area: 1 / 1;
+  min-height: 0;
   display: flex;
+}
+
+/* Hidden, not removed: the pane keeps its size, so the browser's viewer holds
+   on to its scroll position and zoom while another tab is in front. */
+.viewer-pane[data-active='false'] {
+  visibility: hidden;
 }
 
 .viewer-frame {

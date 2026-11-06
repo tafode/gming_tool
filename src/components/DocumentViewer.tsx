@@ -1,6 +1,11 @@
-//! The reading pane: the browser's own PDF viewer, pointed at the chosen
-//! document. Office documents are served as converted PDFs, so they look the
-//! same here as any other book.
+//! One document's reading pane: the browser's own PDF viewer, pointed at the
+//! chosen document. Office documents are served as converted PDFs, so they look
+//! the same here as any other book.
+//!
+//! Every open document keeps its pane mounted, even while another tab is in
+//! front. Hiding it with `visibility` rather than removing it lets the browser's
+//! viewer keep its scroll position and zoom, so switching back lands where you
+//! were rather than at the top of the page.
 
 import { pdfUrl, type PdfDocumentInfo } from '../pdf/library';
 
@@ -15,6 +20,8 @@ interface DocumentViewerProps {
   preparing: boolean;
   /** Set when opening the document failed (e.g. the conversion did). */
   error: string | null;
+  /** False while another tab is in front; the pane stays mounted but hidden. */
+  active?: boolean;
 }
 
 export function DocumentViewer({
@@ -24,36 +31,31 @@ export function DocumentViewer({
   converter,
   preparing,
   error,
+  active = true,
 }: DocumentViewerProps) {
   const needsConverter = document !== null && document.kind === 'office' && converter === null;
 
   return (
-    <section className="panel viewer">
-      <h2 className="panel-title">
-        {document === null ? 'Document' : `${document.name} · page ${page}`}
-      </h2>
-
-      <div className="viewer-pane">
-        {document === null ? (
-          <p className="empty">Pick a document to read it here.</p>
-        ) : needsConverter ? (
-          <p className="note">
-            This is a Word or OpenDocument file. Install LibreOffice on this machine,
-            then press Refresh, to read it here.
-          </p>
-        ) : error !== null ? (
-          <p className="note">{error}</p>
-        ) : preparing ? (
-          <p className="note">Converting {document.name}…</p>
-        ) : (
-          <iframe
-            key={`${document.path}#${page}#${revision}`}
-            className="viewer-frame"
-            title={`${document.name} — page ${page}`}
-            src={`${pdfUrl(document.path)}#page=${page}`}
-          />
-        )}
-      </div>
-    </section>
+    <div className="viewer-pane" data-active={active}>
+      {document === null ? (
+        <p className="empty">Pick a document to read it here.</p>
+      ) : needsConverter ? (
+        <p className="note">
+          This is a Word or OpenDocument file. Install LibreOffice on this machine,
+          then press Refresh, to read it here.
+        </p>
+      ) : error !== null ? (
+        <p className="note">{error}</p>
+      ) : preparing ? (
+        <p className="note">Converting {document.name}…</p>
+      ) : (
+        <iframe
+          key={`${document.path}#${page}#${revision}`}
+          className="viewer-frame"
+          title={`${document.name} — page ${page}`}
+          src={`${pdfUrl(document.path)}#page=${page}`}
+        />
+      )}
+    </div>
   );
 }

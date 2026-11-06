@@ -43,6 +43,13 @@ const DOCUMENTS: PdfDocumentInfo[] = [
   { path: 'notes.docx', name: 'notes', size: 1024, modified: 1700000001, kind: 'office' },
 ];
 
+// Two PDFs, so a test can open both without the office conversion getting in
+// the way.
+const TWO_PDFS: PdfDocumentInfo[] = [
+  { path: 'rulebook.pdf', name: 'rulebook', size: 2048, modified: 1700000000, kind: 'pdf' },
+  { path: 'adventure.pdf', name: 'adventure', size: 1024, modified: 1700000001, kind: 'pdf' },
+];
+
 /**
  * Stub the one thing the app reaches out for on load: the reference listing.
  *
@@ -114,6 +121,64 @@ describe('the GMing tool', () => {
 
     const viewer = screen.getByTitle('rulebook — page 1') as HTMLIFrameElement;
     expect(viewer.getAttribute('src')).toBe('/pdfs/rulebook.pdf#page=1');
+  });
+
+  it('gives each document its own tab and switches between them', async () => {
+    stubFetch(TWO_PDFS);
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /rulebook/ }));
+    fireEvent.click(screen.getByRole('button', { name: /adventure/ }));
+
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
+      'rulebook',
+      'adventure',
+    ]);
+    expect(screen.getByTitle('adventure — page 1')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'rulebook' }));
+    expect(screen.getByTitle('rulebook — page 1')).toBeTruthy();
+  });
+
+  it('keeps every open document mounted so a tab keeps its place', async () => {
+    stubFetch(TWO_PDFS);
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /rulebook/ }));
+    fireEvent.click(screen.getByRole('button', { name: /adventure/ }));
+
+    // Both viewers stay in the page; only the active tab's pane is visible.
+    const rulebook = screen.getByTitle('rulebook — page 1').closest('.viewer-pane');
+    const adventure = screen.getByTitle('adventure — page 1').closest('.viewer-pane');
+    expect(rulebook?.getAttribute('data-active')).toBe('false');
+    expect(adventure?.getAttribute('data-active')).toBe('true');
+
+    fireEvent.click(screen.getByRole('tab', { name: 'rulebook' }));
+    expect(
+      screen.getByTitle('rulebook — page 1').closest('.viewer-pane')?.getAttribute('data-active'),
+    ).toBe('true');
+  });
+
+  it('closes a tab and shows the document that remains', async () => {
+    stubFetch(TWO_PDFS);
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /rulebook/ }));
+    fireEvent.click(screen.getByRole('button', { name: /adventure/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Close adventure' }));
+
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['rulebook']);
+    expect(screen.getByTitle('rulebook — page 1')).toBeTruthy();
+  });
+
+  it('reopens a document at the page it was left on', async () => {
+    localStorage.setItem('gming_tool.reference.pages', JSON.stringify({ 'rulebook.pdf': 12 }));
+    stubFetch(TWO_PDFS);
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /rulebook/ }));
+
+    expect(screen.getByTitle('rulebook — page 12')).toBeTruthy();
   });
 
   it('points at the folder when there are no documents', async () => {

@@ -7,7 +7,7 @@ import {
   type ChangeEvent,
 } from 'react';
 import { DocumentSidebar } from './components/DocumentSidebar';
-import { DocumentViewer } from './components/DocumentViewer';
+import { DocumentArea } from './components/DocumentArea';
 import { MusicPanel, type Playback } from './components/MusicPanel';
 import { StatusBar } from './components/StatusBar';
 import { createAutosaver, downloadDocument, loadDocument, saveDocument } from './model/store';
@@ -351,13 +351,13 @@ export default function App() {
           onOpenResult={documents.open}
           onRefresh={documents.refresh}
         />
-        <DocumentViewer
-          document={documents.active}
-          page={documents.page}
-          revision={documents.revision}
+        <DocumentArea
+          tabs={documents.tabs}
+          documents={documents.documents}
+          activePath={documents.activePath}
           converter={documents.converter}
-          preparing={documents.preparing}
-          error={documents.viewerError}
+          onActivate={documents.activate}
+          onClose={documents.close}
         />
         <MusicPanel
           tracks={data.music.tracks}
